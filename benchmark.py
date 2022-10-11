@@ -1,5 +1,5 @@
-%%writefile ddp_example.py
 import os
+import time
 
 import torch
 import torch.distributed as dist
@@ -11,7 +11,9 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 from torchvision.datasets import MNIST
 
-import time
+from transformers.models.bloom.configuration_bloom import BloomConfig
+
+from parallel_attention import ParallelBloomBlock
 
 BACKEND = 'nccl' if torch.cuda.is_available() else 'gloo'
 
@@ -82,14 +84,15 @@ def run_training(rank, size):
     device = torch.device('cuda', rank) if torch.cuda.is_available() else torch.device('cpu')
 
     # Data generating process. ###########################
-    data = torch.randn(BATCH_SIZE, 1, 28, 28).to(device)
-    target = torch.randint(0, 10, (BATCH_SIZE,)).to(device)
+    config = BloomConfig()
+
+    data = torch.randn(BATCH_SIZE, 17, config.hidden_size).to(device)
+    target = torch.rand((BATCH_SIZE, 17, config.hidden_size)).to(device)
     ######################################################
 
 
     # Your model here. ###################################
-    model = Net().to(device)
-    model = DistributedDataParallel(model)
+    model = ParallelBloomBlock(config).to(device)
     ######################################################
 
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
@@ -102,7 +105,7 @@ def run_training(rank, size):
 
             optimizer.zero_grad()
             output = model(data)
-            loss = torch.nn.functional.cross_entropy(output, target)
+            loss = torch.nn.functional.mse_loss(output, target)
             epoch_loss += loss.item()
             loss.backward()
 
