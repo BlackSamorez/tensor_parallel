@@ -17,4 +17,4 @@ one can write:
 
 ``` CUDA_VISIBLE_DEVICES=4,5 torchrun --nproc_per_node 2 benchmark.py -d 0 -n 100 -b 128```
 
-or ``` CUDA_VISIBLE_DEVICES=4,5 torchrun --nproc_per_node 2 benchmark.py --do_backward 0 --num_iter 100 --batch_size 1488```
+or ``` CUDA_VISIBLE_DEVICES=4,5 torchrun --nproc_per_node 2 benchmark.py --do_backward 0 --num_iter 100 --batch_size 128```
