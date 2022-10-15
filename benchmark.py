@@ -13,7 +13,7 @@ from torchvision.datasets import MNIST
 
 from transformers.models.bloom.configuration_bloom import BloomConfig
 
-from parallel_attention import ParallelBloomBlock
+from parallel_attention import ParallelBlock
 
 BACKEND = 'nccl' if torch.cuda.is_available() else 'gloo'
 
@@ -92,7 +92,7 @@ def run_training(rank, size):
 
 
     # Your model here. ###################################
-    model = ParallelBloomBlock(config).to(device)
+    model = ParallelBlock(config).to(device)
     ######################################################
 
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.5)

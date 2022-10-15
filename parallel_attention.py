@@ -6,7 +6,7 @@ from torch.nn import LayerNorm
 from torch.distributed import get_world_size
 from torch.distributed.nn import all_reduce
 
-from transformers.models.bloom.modeling_bloom import BloomMLP, dropout_add
+from transformers.models.bloom.modeling_bloom import dropout_add, BloomGelu
 from transformers.models.bloom.configuration_bloom import BloomConfig
 
 from typing import Tuple, Optional
@@ -113,7 +113,29 @@ class ParallelAttention(nn.Module):
         return output_tensor
 
 
-class ParallelBloomBlock(nn.Module):
+class ParallelMLP(nn.Module):
+    def __init__(self, config: BloomConfig):
+        super().__init__()
+        hidden_size = config.hidden_size
+
+        assert (4 * hidden_size) % get_world_size() == 0
+
+        self.dense_h_to_4h = nn.Linear(hidden_size, (4 * hidden_size) // get_world_size())
+        self.gelu_impl = BloomGelu()
+        self.dense_4h_to_h = nn.Linear((4 * hidden_size) // get_world_size(), hidden_size)
+        self.hidden_dropout = config.hidden_dropout
+
+    def forward(self, hidden_states: torch.Tensor, residual: torch.Tensor) -> torch.Tensor:
+        hidden_states = self.gelu_impl(self.dense_h_to_4h(hidden_states))
+        intermediate_output = self.dense_4h_to_h(hidden_states)
+        intermediate_output = all_reduce(intermediate_output)
+
+        output = dropout_add(intermediate_output, residual, self.hidden_dropout, self.training)
+
+        return output
+
+
+class ParallelBlock(nn.Module):
     def __init__(self, config: BloomConfig):
         super().__init__()
         hidden_size = config.hidden_size
@@ -123,7 +145,7 @@ class ParallelBloomBlock(nn.Module):
         self.self_attention = ParallelAttention(config.hidden_size, config.n_head, config.hidden_dropout)
         self.post_attention_layernorm = LayerNorm(hidden_size, eps=config.layer_norm_epsilon)
 
-        self.mlp = BloomMLP(config)
+        self.mlp = ParallelMLP(config)
 
         self.apply_residual_connection_post_layernorm = config.apply_residual_connection_post_layernorm
 
