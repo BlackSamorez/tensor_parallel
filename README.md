@@ -12,9 +12,9 @@ and their short versions: -d, -n, -b
 CUDA_VISIBLE_DEVICES -- gpus, you are using
 nproc_per_node       -- # of gpus/ processes
 
-So, for example, to run a benchmark with no backward, 100 iterations and batch_size of 1488 objects 
+So, for example, to run a benchmark with no backward, 100 iterations and batch_size of 128 objects 
 one can write: 
 
-``` CUDA_VISIBLE_DEVICES=4,5 torchrun --nproc_per_node 2 benchmark.py -d 0 -n 100 -b 1488```
+``` CUDA_VISIBLE_DEVICES=4,5 torchrun --nproc_per_node 2 benchmark.py -d 0 -n 100 -b 128```
 
 or ``` CUDA_VISIBLE_DEVICES=4,5 torchrun --nproc_per_node 2 benchmark.py --do_backward 0 --num_iter 100 --batch_size 1488```
