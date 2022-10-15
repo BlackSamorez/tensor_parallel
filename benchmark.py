@@ -55,7 +55,7 @@ class Net(nn.Module):
 
 # default values.
 DO_BACKWARD: int = True
-NUM_ITER: int = 20
+NUM_ITER: int = 100
 BATCH_SIZE: int = 1000
 
     
@@ -129,7 +129,7 @@ def run_training(rank, size):
 
         working_time = time.perf_counter_ns() - start_time
 
-    print(f"Rank {rank} worked for {working_time / 1e9:,.2f} seconds; ")
+    print(f"Mean Iter time for Rank {rank}: {working_time / 1e6 / NUM_ITER:,.2f} ms; ")
 
 if __name__ == "__main__":
     local_rank = int(os.environ["LOCAL_RANK"])
