@@ -56,15 +56,16 @@ class Net(nn.Module):
 # default values.
 DO_BACKWARD: int = True
 NUM_ITER: int = 100
-BATCH_SIZE: int = 1000
+BATCH_SIZE: int = 1024
+MAXIMUM: bool = False
 
     
 # Arg parse ################################################### 
 import getopt, sys
 
 argumentList = sys.argv[1:]
-options = "d:n:b:"
-long_options = ["do_backward=", "num_iter=", "batch_size="]
+options = "d:n:b:m"
+long_options = ["do_backward=", "num_iter=", "batch_size=", "maximum"]
 arguments, values = getopt.getopt(argumentList, options, long_options)
 
 for currentArgument, currentValue in arguments:
@@ -74,7 +75,8 @@ for currentArgument, currentValue in arguments:
             NUM_ITER = int(currentValue)
         elif currentArgument in ("-b", "--batch_size"):
             BATCH_SIZE = int(currentValue)
-
+        elif currentArgument in ("-m", "--maximum"):
+            MAXIMUM = True
 # print(f"Benchmark settings:")
 # print(f"DO_BACKWARD: {DO_BACKWARD}\nNUM_ITER: {NUM_ITER}\nBATCH_SIZE: {BATCH_SIZE}")
 ##############################################################
@@ -85,6 +87,8 @@ def run_training(rank, size):
 
     # Data generating process. ###########################
     config = BloomConfig()
+    if MAXIMUM:
+        config = config.from_pretrained("bigscience/bloom")
 
     data = torch.randn(BATCH_SIZE, 17, config.hidden_size).to(device)
     target = torch.rand((BATCH_SIZE, 17, config.hidden_size)).to(device)
