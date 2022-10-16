@@ -26,10 +26,10 @@ DO_BACKWARD: int = False
 NUM_ITER: int    = 100
 BATCH_SIZE: int  = 4
 SEQ_LENGTH: int  = 17
-MAXIMUM: bool    = False
+MAXIMUM: bool    = True
 
 argumentList = sys.argv[1:]
-options = "d:n:b:m:s"
+options = "d:n:b:m:s:"
 long_options = ["do_backward=", "num_iter=",
                 "batch_size=", "maximum",
                 "seq_length=",]
@@ -37,7 +37,7 @@ long_options = ["do_backward=", "num_iter=",
 arguments, values = getopt.getopt(argumentList, options, long_options)
 for currentArgument, currentValue in arguments:
         if currentArgument in ("-d", "--do_backward"):
-            DO_BACKWARD = bool(currentValue)      
+            DO_BACKWARD = int(currentValue)      
         elif currentArgument in ("-n", "--num_iter"):
             NUM_ITER = int(currentValue)
         elif currentArgument in ("-b", "--batch_size"):
@@ -55,6 +55,34 @@ print(f"MAXIMUM:     {MAXIMUM}")
 print(f"SEQ_LENGTH:  {SEQ_LENGTH}")
 
 ##############################################################
+
+benchmark_results = pd.DataFrame()
+
+def update_results(res_df: pd.DataFrame, rank: int,
+                   do_backward: int | bool,
+                   num_iter: int,
+                   batch_size: int,
+                   seq_length: int,
+                   hid_size: int,
+                   model_type: str,
+                   config: str,
+                   device_name: str,
+                   working_time) -> pd.DataFrame():
+
+    res_df[f"{rank}_do_backward"] = do_backward
+    res_df[f"{rank}_num_iter"]    = num_iter
+    res_df[f"{rank}_batch_size"]  = batch_size
+    res_df[f"{rank}_seq_length"]  = seq_length
+    res_df[f"{rank}_config"]      = config
+    res_df[f"{rank}_hid_size"]    = hid_size
+    res_df[f"{rank}_model_type"]  = model_type
+    res_df[f"{rank}_device_name"] = device_name
+
+    # Store the computation time.
+    res_df[f"{rank}_working_time"] = working_time
+
+    return res_df
+
 
 def run_training(rank, size):
     torch.manual_seed(1234)
@@ -83,10 +111,20 @@ def run_training(rank, size):
     with torch.cuda.amp.autocast():
         if DO_BACKWARD:
             start_time = time.perf_counter_ns()
+           
+            # Warm-up iterations.
+            for iter in range(100):
+                 output = model(data, data)
+
+            if torch.cuda.is_available():
+                 torch.cuda.synchronize(device)
+            if torch.distributed.get_world_size() > 1:
+                 torch.distributed.barrier()
+
             for iter in range(NUM_ITER):
 
                 optimizer.zero_grad()
-                output = model(data)
+                output = model(data, data)
                 loss = torch.nn.functional.mse_loss(output, target)
                 epoch_loss += loss.item()
                 loss.backward()
@@ -99,8 +137,10 @@ def run_training(rank, size):
             working_time = time.perf_counter_ns() - start_time
         else:
             with torch.no_grad():
+                # Warm-up iterations.               
                 for iter in range(100):
                     output = model(data, data)
+
                 if torch.cuda.is_available():
                     torch.cuda.synchronize(device)
                 if torch.distributed.get_world_size() > 1:
