@@ -11,12 +11,17 @@ You may either use manual benchmark (```benchmark_manual.py```) or auto (```mark
 consider command line arguments:
 
 ```-d | do_backward``` -- wether you need backward passes or not
+
 ```-n | num_iter ```   -- number of iterations
+
 ```-s | seq_length```  -- sequence length
+
 ```-b | batch_size```  -- okay
+
 ```-c | bloomconfig``` -- str used in BloomConfig().from_pretrained to specify the model you need
 
 ```CUDA_VISIBLE_DEVICES``` -- gpus, you are using
+
 ```nproc_per_node```       -- # of gpus/ processes
 
 Don't forget to set correct gpu ids: ```export CUDA_DEVICE_ORDER=PCI_BUS_ID```
