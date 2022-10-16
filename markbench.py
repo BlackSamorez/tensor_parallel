@@ -112,15 +112,15 @@ def run_experiment(rank, size):
 
                 # Now let's allow backward pass.
                 # Warm-up iterations
-                for _ in range(100):
-                    output = model(data)
-
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize(device)
-                if torch.distributed.get_world_size() > 1:
-                    torch.distributed.barrier()
-
                 try:
+                    for _ in range(100):
+                        output = model(data)
+
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize(device)
+                    if torch.distributed.get_world_size() > 1:
+                        torch.distributed.barrier()
+                    
                     # The very benchmark itself
                     start_time = time.perf_counter_ns()
                     for _ in range(NUM_ITER):
