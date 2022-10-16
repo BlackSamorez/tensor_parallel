@@ -27,13 +27,13 @@ DO_BACKWARD: int = False
 NUM_ITER: int    = 100
 BATCH_SIZE: int  = 4
 SEQ_LENGTH: int  = 17
-MAXIMUM: bool    = True
+BLOOMCONFIG: str = "bloom"
 
 argumentList = sys.argv[1:]
-options = "d:n:b:m:s:"
+options = "d:n:b:s:c:"
 long_options = ["do_backward=", "num_iter=",
-                "batch_size=", "maximum",
-                "seq_length=",]
+                "batch_size=", "seq_length=", 
+                "bloomconfig="]
 
 arguments, values = getopt.getopt(argumentList, options, long_options)
 for currentArgument, currentValue in arguments:
@@ -47,13 +47,15 @@ for currentArgument, currentValue in arguments:
             MAXIMUM = True
         elif currentArgument in ("-s", "--seq_length"):
             SEQ_LENGTH = int(currentValue)
+        elif currentArgument in ("-c", "--bloomconfig"):
+            BLOOMCONFIG = currentValue
 
 print(f"Benchmark setting:")
 print(f"DO_BACKWARD: {DO_BACKWARD}")
 print(f"NUM_ITER:    {NUM_ITER}")
 print(f"BATCH_SIZE:  {BATCH_SIZE}")
-print(f"MAXIMUM:     {MAXIMUM}")
 print(f"SEQ_LENGTH:  {SEQ_LENGTH}")
+print(f"BLOOMCONFIG: {BLOOMCONFIG}")
 
 ##############################################################
 
@@ -91,8 +93,7 @@ def run_training(rank, size):
 
     # Data generating process. ###########################
     config = BloomConfig()
-    if MAXIMUM:
-        config = config.from_pretrained("bigscience/bloom")
+    config = config.from_pretrained(f"bigscience/{BLOOMCONFIG}")
 
     data = torch.randn(BATCH_SIZE, SEQ_LENGTH, config.hidden_size).to(device)
     target = torch.rand((BATCH_SIZE, SEQ_LENGTH, config.hidden_size)).to(device)
