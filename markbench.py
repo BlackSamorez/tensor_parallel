@@ -1,6 +1,7 @@
 import os
 import time
 
+import pandas as pd
 import torch
 import torch.distributed as dist
 from   transformers.models.bloom.configuration_bloom import BloomConfig
@@ -59,7 +60,7 @@ print(f"SEQ_LENGTH:  {SEQ_LENGTH}")
 benchmark_results = pd.DataFrame()
 
 def update_results(res_df: pd.DataFrame, rank: int,
-                   do_backward: int | bool,
+                   do_backward: int,
                    num_iter: int,
                    batch_size: int,
                    seq_length: int,
