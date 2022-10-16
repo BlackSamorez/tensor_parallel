@@ -3,43 +3,38 @@ import time
 
 import torch
 import torch.distributed as dist
-import torch.nn as nn
-import torch.nn.functional as F
-from torch.nn.parallel import DistributedDataParallel
-import torchvision.transforms as transforms
-from torch.utils.data import DataLoader
-from torch.utils.data.distributed import DistributedSampler
-from torchvision.datasets import MNIST
-
 from transformers.models.bloom.configuration_bloom import BloomConfig
 
-from parallel_attention import ParallelBlock, ParallelMLP
+from parallel_blocks import ParallelBlock, ParallelMLP, ParallelAttention
 
+
+# Parallel settings ###########################################
 BACKEND = 'nccl' if torch.cuda.is_available() else 'gloo'
+torch.set_num_threads(1)
 
 def init_process(local_rank, fn, backend=BACKEND):
     """ Initialize the distributed environment. """
     dist.init_process_group(backend, rank=local_rank)
     size = dist.get_world_size()
     fn(local_rank, size)
-
-torch.set_num_threads(1)
-
     
 # Arg parse ################################################### 
 import getopt, sys
 
 # default values.
 DO_BACKWARD: int = False
-NUM_ITER: int = 100
-BATCH_SIZE: int = 1024
-MAXIMUM: bool = False
+NUM_ITER: int    = 100
+BATCH_SIZE: int  = 1024
+SEQ_LENGTH: int  = 17
+MAXIMUM: bool    = False
 
 argumentList = sys.argv[1:]
-options = "d:n:b:m"
-long_options = ["do_backward=", "num_iter=", "batch_size=", "maximum"]
-arguments, values = getopt.getopt(argumentList, options, long_options)
+options = "d:n:b:m:s"
+long_options = ["do_backward=", "num_iter=",
+                "batch_size=", "maximum",
+                "seq_length=",]
 
+arguments, values = getopt.getopt(argumentList, options, long_options)
 for currentArgument, currentValue in arguments:
         if currentArgument in ("-d", "--do_backward"):
             DO_BACKWARD = bool(currentValue)      
@@ -49,8 +44,9 @@ for currentArgument, currentValue in arguments:
             BATCH_SIZE = int(currentValue)
         elif currentArgument in ("-m", "--maximum"):
             MAXIMUM = True
-# print(f"Benchmark settings:")
-# print(f"DO_BACKWARD: {DO_BACKWARD}\nNUM_ITER: {NUM_ITER}\nBATCH_SIZE: {BATCH_SIZE}")
+        elif currentArgument in ("-s", "--seq_length"):
+            SEQ_LENGTH = int(currentValue)
+
 ##############################################################
 
 def run_training(rank, size):
@@ -62,8 +58,8 @@ def run_training(rank, size):
     if MAXIMUM:
         config = config.from_pretrained("bigscience/bloom")
 
-    data = torch.randn(BATCH_SIZE, 17, config.hidden_size).to(device)
-    target = torch.rand((BATCH_SIZE, 17, config.hidden_size)).to(device)
+    data = torch.randn(BATCH_SIZE, SEQ_LENGTH, config.hidden_size).to(device)
+    target = torch.rand((BATCH_SIZE, SEQ_LENGTH, config.hidden_size)).to(device)
     ######################################################
 
 
