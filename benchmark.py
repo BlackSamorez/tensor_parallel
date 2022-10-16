@@ -13,7 +13,7 @@ from torchvision.datasets import MNIST
 
 from transformers.models.bloom.configuration_bloom import BloomConfig
 
-from parallel_attention import ParallelBlock
+from parallel_attention import ParallelBlock, ParallelMLP
 
 BACKEND = 'nccl' if torch.cuda.is_available() else 'gloo'
 
@@ -30,7 +30,7 @@ torch.set_num_threads(1)
 import getopt, sys
 
 # default values.
-DO_BACKWARD: int = True
+DO_BACKWARD: int = False
 NUM_ITER: int = 100
 BATCH_SIZE: int = 1024
 MAXIMUM: bool = False
@@ -68,42 +68,53 @@ def run_training(rank, size):
 
 
     # Your model here. ###################################
-    model = ParallelBlock(config).to(device)
+    model = ParallelMLP(config).to(device)
     ######################################################
 
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
     steps = 0
     epoch_loss = 0
+    DO_BACKWARD = False
+    if torch.distributed.get_world_size() > 1:
+        torch.distributed.barrier()
+    with torch.cuda.amp.autocast():
+        if DO_BACKWARD:
+            start_time = time.perf_counter_ns()
+            for iter in range(NUM_ITER):
 
-    if DO_BACKWARD:
-        start_time = time.perf_counter_ns()
-        for iter in range(NUM_ITER):
+                optimizer.zero_grad()
+                output = model(data)
+                loss = torch.nn.functional.mse_loss(output, target)
+                epoch_loss += loss.item()
+                loss.backward()
 
-            optimizer.zero_grad()
-            output = model(data)
-            loss = torch.nn.functional.mse_loss(output, target)
-            epoch_loss += loss.item()
-            loss.backward()
+                optimizer.step()
 
-            optimizer.step()
+            if torch.cuda.is_available():
+                torch.cuda.synchronize(device)
 
-        if torch.cuda.is_available():
-            torch.cuda.synchronize(device)
+            working_time = time.perf_counter_ns() - start_time
+        else:
+            with torch.no_grad():
+                for iter in range(100):
+                    output = model(data, data)
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize(device)
+                if torch.distributed.get_world_size() > 1:
+                    torch.distributed.barrier()
 
-        working_time = time.perf_counter_ns() - start_time
-    else:
-        start_time = time.perf_counter_ns()
-        for iter in range(NUM_ITER):
-            output = model(data)
+                start_time = time.perf_counter_ns()
+                for iter in range(NUM_ITER):
+                    output = model(data, data)
 
-            # Do we need loss calculation?
-            loss = torch.nn.functional.cross_entropy(output, target)
-            epoch_loss += loss.item()
+                    # Do we need loss calculation?
+                    loss = torch.nn.functional.cross_entropy(output, target)
+                    epoch_loss += loss.item()
 
-        if torch.cuda.is_available():
-            torch.cuda.synchronize(device)
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize(device)
 
-        working_time = time.perf_counter_ns() - start_time
+                working_time = time.perf_counter_ns() - start_time
 
     print(f"Mean Iter time for Rank {rank}: {working_time / 1e6 / NUM_ITER:,.2f} ms; ")
 
