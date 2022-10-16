@@ -6,7 +6,8 @@ import torch
 import torch.distributed as dist
 from   transformers.models.bloom.configuration_bloom import BloomConfig
 
-from parallel_blocks import ParallelBlock, ParallelMLP, ParallelAttention
+from parallel_blocks  import ParallelBlock, ParallelMLP, ParallelAttention
+from experiment_utils import update_results
 
 
 # Parallel settings ###########################################
@@ -18,149 +19,129 @@ def init_process(local_rank, fn, backend=BACKEND):
     dist.init_process_group(backend, rank=local_rank)
     size = dist.get_world_size()
     fn(local_rank, size)
-    
-# Arg parse ################################################### 
-import getopt, sys
-
-# default values.
-DO_BACKWARD: int = False
-NUM_ITER: int    = 100
-BATCH_SIZE: int  = 4
-SEQ_LENGTH: int  = 17
-MAXIMUM: bool    = True
-
-argumentList = sys.argv[1:]
-options = "d:n:b:m:s:"
-long_options = ["do_backward=", "num_iter=",
-                "batch_size=", "maximum",
-                "seq_length=",]
-
-arguments, values = getopt.getopt(argumentList, options, long_options)
-for currentArgument, currentValue in arguments:
-        if currentArgument in ("-d", "--do_backward"):
-            DO_BACKWARD = int(currentValue)      
-        elif currentArgument in ("-n", "--num_iter"):
-            NUM_ITER = int(currentValue)
-        elif currentArgument in ("-b", "--batch_size"):
-            BATCH_SIZE = int(currentValue)
-        elif currentArgument in ("-m", "--maximum"):
-            MAXIMUM = True
-        elif currentArgument in ("-s", "--seq_length"):
-            SEQ_LENGTH = int(currentValue)
-
-print(f"Benchmark setting:")
-print(f"DO_BACKWARD: {DO_BACKWARD}")
-print(f"NUM_ITER:    {NUM_ITER}")
-print(f"BATCH_SIZE:  {BATCH_SIZE}")
-print(f"MAXIMUM:     {MAXIMUM}")
-print(f"SEQ_LENGTH:  {SEQ_LENGTH}")
-
-##############################################################
-
-benchmark_results = pd.DataFrame()
-
-def update_results(res_df: pd.DataFrame, rank: int,
-                   do_backward: int,
-                   num_iter: int,
-                   batch_size: int,
-                   seq_length: int,
-                   hid_size: int,
-                   model_type: str,
-                   config: str,
-                   device_name: str,
-                   working_time) -> pd.DataFrame():
-
-    res_df[f"{rank}_do_backward"] = do_backward
-    res_df[f"{rank}_num_iter"]    = num_iter
-    res_df[f"{rank}_batch_size"]  = batch_size
-    res_df[f"{rank}_seq_length"]  = seq_length
-    res_df[f"{rank}_config"]      = config
-    res_df[f"{rank}_hid_size"]    = hid_size
-    res_df[f"{rank}_model_type"]  = model_type
-    res_df[f"{rank}_device_name"] = device_name
-
-    # Store the computation time.
-    res_df[f"{rank}_working_time"] = working_time
-
-    return res_df
 
 
-def run_training(rank, size):
+# benchmark_results = pd.DataFrame()
+
+
+# experiment setting. ###############################################
+model_types    = ["mlp", "attention", "full_block"]
+
+configs        = ["bloom-560m",
+                  "bloom-1b1", "bloom-1b7",
+                  "bloom-3b", 
+                  "bloom-7b1", 
+                  "bloom"]  # 176B parameters.
+
+batch_x_seqlen = [(1, 1), (1, 128), (1, 512), (1, 2048),
+                  (4, 32), (4, 64),
+                  (8, 64), 
+                  (16, 64)]
+
+#####################################################################
+
+def run_experiment(rank, size):
     torch.manual_seed(1234)
-    device = torch.device('cuda', rank) if torch.cuda.is_available() else torch.device('cpu')
+    device = torch.device("cuda", rank) if torch.cuda.is_available() else torch.device("cpu")
 
-    # Data generating process. ###########################
-    config = BloomConfig()
-    if MAXIMUM:
-        config = config.from_pretrained("bigscience/bloom")
+    for batch_size, seq_length in batch_x_seqlen:
+        for model_type in model_types:
+            for conf in configs:
+                try:
+                    # Data generating process. 
+                    config = BloomConfig()
+                    config = config.from_pretrained(f"bigscience/{conf}")
 
-    data = torch.randn(BATCH_SIZE, SEQ_LENGTH, config.hidden_size).to(device)
-    target = torch.rand((BATCH_SIZE, SEQ_LENGTH, config.hidden_size)).to(device)
-    ######################################################
+                    data   = torch.randn(batch_size, seq_length, config.hidden_size).to(device)
+                    data.requires_grad = True
+                    target = torch.rand((batch_size, seq_length, config.hidden_size)).to(device)
 
+                    # Defining the model.
+                    if model_type == "mlp":
+                        data = (data, data)
+                        model = ParallelMLP(config).to(device)
+                    elif model_type == "attention":
+                        model = ParallelAttention(congig).to(device)
+                    elif model_type == "full_block":
+                        model = ParallelBlock(congig).to(device)
 
-    # Your model here. ###################################
-    model = ParallelMLP(config).to(device)
-    ######################################################
+                    for param in model.parameters():
+                        param.requires_grad = False
 
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.01, momentum=0.5)
-    steps = 0
-    epoch_loss = 0
-    # DO_BACKWARD = False  # why do we need that crunch?
-    if torch.distributed.get_world_size() > 1:
-        torch.distributed.barrier()
-    with torch.cuda.amp.autocast():
-        if DO_BACKWARD:
-            start_time = time.perf_counter_ns()
-           
-            # Warm-up iterations.
-            for iter in range(100):
-                 output = model(data, data)
+                    optimizer = torch.optim.SGD(model.parameters(),
+                                                lr=0.01, momentum=0.5)
+                    steps, epoch_loss = 0, 0
 
-            if torch.cuda.is_available():
-                 torch.cuda.synchronize(device)
-            if torch.distributed.get_world_size() > 1:
-                 torch.distributed.barrier()
+                    # Let all processes wait for eachother
+                    if torch.distributed.get_world_size() > 1:
+                        torch.distributed.barrier()
 
-            for iter in range(NUM_ITER):
+                    # Run with no backward passes
+                    with torch.no_grad():
 
-                optimizer.zero_grad()
-                output = model(data, data)
-                loss = torch.nn.functional.mse_loss(output, target)
-                epoch_loss += loss.item()
-                loss.backward()
+                        # Warm-up iterations              
+                        for _ in range(100):
+                            output = model(data)
 
-                optimizer.step()
+                        if torch.cuda.is_available():
+                            torch.cuda.synchronize(device)
+                        if torch.distributed.get_world_size() > 1:
+                            torch.distributed.barrier()
 
-            if torch.cuda.is_available():
-                torch.cuda.synchronize(device)
+                        # The very benchmark itself
+                        start_time = time.perf_counter_ns()
+                        for _ in range(NUM_ITER):
+                            output = model(data)
+                            loss = torch.nn.functional.cross_entropy(output, target)
+                            epoch_loss += loss.item()
 
-            working_time = time.perf_counter_ns() - start_time
-        else:
-            with torch.no_grad():
-                # Warm-up iterations.               
-                for iter in range(100):
-                    output = model(data, data)
+                        if torch.cuda.is_available():
+                            torch.cuda.synchronize(device)
+
+                        working_time = time.perf_counter_ns() - start_time
+                        
+                        print(f"Rank {rank}, no backward, batch_size {batch_size}, seq_len {seq_length}; ")
+                        print(f"Model type {model_type}, config: {conf}; ")
+                        print(f"Mean Iter time: {working_time / 1e6 / NUM_ITER:,.2f} ms; \n")
+                    except:
+                        print("Experiment failed for some reason (no backward)")
+
+                # Let all processes wait for eachother once again
+                if torch.distributed.get_world_size() > 1:
+                    torch.distributed.barrier()
+
+                # Now let's allow backward pass.
+                # Warm-up iterations
+                for _ in range(100):
+                    output = model(data)
 
                 if torch.cuda.is_available():
                     torch.cuda.synchronize(device)
                 if torch.distributed.get_world_size() > 1:
                     torch.distributed.barrier()
 
-                start_time = time.perf_counter_ns()
-                for iter in range(NUM_ITER):
-                    output = model(data, data)
+                try:
+                    # The very benchmark itself
+                    start_time = time.perf_counter_ns()
+                    for _ in range(NUM_ITER):
+                        output = model(data)
+                        loss = torch.nn.functional.cross_entropy(output, target)
+                        epoch_loss += loss.item()
+                        loss.backward()
+                        optimizer.step()
 
-                    loss = torch.nn.functional.cross_entropy(output, target)
-                    epoch_loss += loss.item()
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize(device)
+                    
+                    working_time = time.perf_counter_ns() - start_time
+                    
+                    print(f"Rank {rank}, with backward, batch_size {batch_size}, seq_len {seq_length}; ")
+                    print(f"Model type {model_type}, config: {conf}; ")
+                    print(f"Mean Iter time: {working_time / 1e6 / NUM_ITER:,.2f} ms; \n")
+                except:
+                    print("Experiment failed for some reason (with backward)")
 
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize(device)
-
-                working_time = time.perf_counter_ns() - start_time
-
-    print(f"Mean Iter time for Rank {rank}: {working_time / 1e6 / NUM_ITER:,.2f} ms; ")
 
 if __name__ == "__main__":
     local_rank = int(os.environ["LOCAL_RANK"])
-    init_process(local_rank, fn=run_training, backend=BACKEND)
+    init_process(local_rank, fn=run_experiment, backend=BACKEND)
