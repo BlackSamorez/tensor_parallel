@@ -41,7 +41,7 @@ Models are tested both with and without backward passes. The results will be pri
 #### TODO:
 
 - Implement smth to store the results into csv/ feather dataframe
-- Decide which model are too big for backward passes and don't check them
+- Decide which models are too big for backward passes and don't check them
 - Decide what to do if one of the experiments failed
 - test it
 
