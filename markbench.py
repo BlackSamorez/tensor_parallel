@@ -12,6 +12,7 @@ from experiment_utils import update_results
 
 # Parallel settings ###########################################
 BACKEND = 'nccl' if torch.cuda.is_available() else 'gloo'
+
 torch.set_num_threads(1)
 
 def init_process(local_rank, fn, backend=BACKEND):
@@ -20,8 +21,32 @@ def init_process(local_rank, fn, backend=BACKEND):
     size = dist.get_world_size()
     fn(local_rank, size)
 
+def update_results(model_type, config, batch_size, 
+                   seq_length, do_backward, rank, 
+                   mean_iter_time, benchmark_results: dict,
+                   path) -> None:
 
-# benchmark_results = pd.DataFrame()
+    benchmark_results["model_type"].append(model_type)
+    benchmark_results["config"].append(config)
+    benchmark_results["batch_size"].append(batch_size)
+    benchmark_results["seq_length"].append(seq_length)
+    benchmark_results["do_backward"].append(do_backward)
+    benchmark_results["rank"].append(rank)
+    benchmark_results["mean_iter_time"].append(mean_iter_time)
+
+    pd.DataFrame(benchmark_results).to_csv(path)
+    return None
+
+
+benchmark_results = {
+    "model_type":[],
+    "config":[],
+    "batch_size":[],
+    "seq_length":[],
+    "do_backward":[],
+    "rank":[],
+    "mean_iter_time":[],
+}
 
 
 # experiment setting. ###############################################
@@ -38,6 +63,9 @@ batch_x_seqlen = [(1, 1), (1, 128), (1, 512), (1, 2048),
                   (8, 64), 
                   (16, 64)]
 
+NUM_ITER = 100
+
+path = "results/markbench_2_gpu_results.csv"
 #####################################################################
 
 def run_experiment(rank, size):
@@ -48,6 +76,7 @@ def run_experiment(rank, size):
         for model_type in model_types:
             for conf in configs:
                 try:
+                # if True:
                     # Data generating process. 
                     config = BloomConfig()
                     config = config.from_pretrained(f"bigscience/{conf}")
@@ -58,12 +87,13 @@ def run_experiment(rank, size):
 
                     # Defining the model.
                     if model_type == "mlp":
-                        data = (data, data)
                         model = ParallelMLP(config).to(device)
                     elif model_type == "attention":
-                        model = ParallelAttention(congig).to(device)
+                        model = ParallelAttention(config.hidden_size, 
+                                                  config.n_head, 
+                                                  config.hidden_dropout).to(device)
                     elif model_type == "full_block":
-                        model = ParallelBlock(congig).to(device)
+                        model = ParallelBlock(config).to(device)
 
                     for param in model.parameters():
                         param.requires_grad = False
@@ -81,7 +111,10 @@ def run_experiment(rank, size):
 
                         # Warm-up iterations              
                         for _ in range(100):
-                            output = model(data)
+                            if model_type == "full_block":
+                                output = model(data)
+                            else:
+                                output = model(data, data)  # whats wrong with the signature
 
                         if torch.cuda.is_available():
                             torch.cuda.synchronize(device)
@@ -91,7 +124,11 @@ def run_experiment(rank, size):
                         # The very benchmark itself
                         start_time = time.perf_counter_ns()
                         for _ in range(NUM_ITER):
-                            output = model(data)
+                            if model_type == "full_block":
+                                output = model(data)
+                            else:
+                                output = model(data, data)  # whats wrong with the signature
+
                             loss = torch.nn.functional.cross_entropy(output, target)
                             epoch_loss += loss.item()
 
@@ -99,12 +136,20 @@ def run_experiment(rank, size):
                             torch.cuda.synchronize(device)
 
                         working_time = time.perf_counter_ns() - start_time
-                        
-                        print(f"Rank {rank}, no backward, batch_size {batch_size}, seq_len {seq_length}; ")
-                        print(f"Model type {model_type}, config: {conf}; ")
-                        print(f"Mean Iter time: {working_time / 1e6 / NUM_ITER:,.2f} ms; \n")
-                    except:
-                        print("Experiment failed for some reason (no backward)")
+                        mean_iter_time = working_time / 1e6 / NUM_ITER
+
+                        update_results(model_type, conf, batch_size, 
+                                       seq_length, False, rank, 
+                                       mean_iter_time, benchmark_results,
+                                       path)
+
+                        print((model_type, conf, batch_size, seq_length, False, rank, mean_iter_time))
+                except:
+                    print(f"Experiment failed:(no backward), batch: {batch_size}, seq: {seq_length}")
+                    update_results(model_type, conf, batch_size, 
+                                    seq_length, False, rank, 
+                                    "Failed", benchmark_results,
+                                    path)
 
                 # Let all processes wait for eachother once again
                 if torch.distributed.get_world_size() > 1:
@@ -113,8 +158,12 @@ def run_experiment(rank, size):
                 # Now let's allow backward pass.
                 # Warm-up iterations
                 try:
+                # if True:
                     for _ in range(100):
-                        output = model(data)
+                        if model_type == "full_block":
+                            output = model(data)
+                        else:
+                            output = model(data, data)  # whats wrong with the signature
 
                     if torch.cuda.is_available():
                         torch.cuda.synchronize(device)
@@ -124,7 +173,11 @@ def run_experiment(rank, size):
                     # The very benchmark itself
                     start_time = time.perf_counter_ns()
                     for _ in range(NUM_ITER):
-                        output = model(data)
+                        if model_type == "full_block":
+                            output = model(data)
+                        else:
+                            output = model(data, data)  # whats wrong with the signature)
+
                         loss = torch.nn.functional.cross_entropy(output, target)
                         epoch_loss += loss.item()
                         loss.backward()
@@ -134,12 +187,20 @@ def run_experiment(rank, size):
                         torch.cuda.synchronize(device)
                     
                     working_time = time.perf_counter_ns() - start_time
-                    
-                    print(f"Rank {rank}, with backward, batch_size {batch_size}, seq_len {seq_length}; ")
-                    print(f"Model type {model_type}, config: {conf}; ")
-                    print(f"Mean Iter time: {working_time / 1e6 / NUM_ITER:,.2f} ms; \n")
+                    mean_iter_time = working_time / 1e6 / NUM_ITER
+
+                    update_results(model_type, conf, batch_size, 
+                                    seq_length, True, rank, 
+                                    mean_iter_time, benchmark_results,
+                                    path)
+
+                    print((model_type, conf, batch_size, seq_length, False, rank, mean_iter_time))
                 except:
-                    print("Experiment failed for some reason (with backward)")
+                    print(f"Experiment failed: (with backward), batch: {batch_size}, seq: {seq_length}")
+                    update_results(model_type, conf, batch_size, 
+                                    seq_length, True, rank, 
+                                    "Failed", benchmark_results,
+                                    path)
 
 
 if __name__ == "__main__":
