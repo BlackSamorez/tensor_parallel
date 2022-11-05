@@ -21,8 +21,8 @@ class ParallelAttention(nn.Module):
         assert num_heads % get_world_size() == 0
         self.num_heads = num_heads // get_world_size()
 
-        self.head_dim = embed_dim // num_heads // get_world_size()
-        assert self.head_dim * self.num_heads * get_world_size() == self.embed_dim, "embed_dim must be divisible by num_heads"
+        self.head_dim = embed_dim // num_heads
+        assert self.head_dim * self.num_heads * get_world_size() == self.embed_dim, f"embed_dim must be divisible by num_heads, got embed_dim={self.embed_dim} and num_heads={self.num_heads} with world_size={get_world_size()} and head_dim={self.head_dim}"
 
         self.query_key_value = nn.Linear(embed_dim, 3 * embed_dim // get_world_size(), **factory_kwargs)
 
