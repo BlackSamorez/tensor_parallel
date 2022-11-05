@@ -2,10 +2,7 @@ import os
 import torch
 import torch.distributed as dist
 
-from transformers.models.bloom.modeling_bloom import BloomModel, BloomBlock, BloomAttention, BloomMLP
-from transformers.models.bloom.configuration_bloom import BloomConfig
-
-from parallel_blocks import ParallelBlock
+from transformers.models.bloom.modeling_bloom import BloomModel, BloomAttention, BloomMLP
 
 # Model Selection
 NAME = "bigscience/bloom-560m"
@@ -23,34 +20,39 @@ def init_process(local_rank, fn, backend=BACKEND):
 
 
 class ParallelBloomAttention(BloomAttention):
-    def forward(self, *args, **kwargs):
-        output = super().forward(*args, **kwargs)
-        dist.all_reduce(output[0])
-        return output
-
-
-class ParallelBloomAttention(BloomAttention):
     def __init__(self, bloom_attention: BloomAttention, rank: int, world_size: int):
         self.__dict__ = bloom_attention.__dict__.copy()
-
         self.rank = rank
         self.world_size = world_size
 
+        # num heads are now per proc
         self.num_heads = self.num_heads // self.world_size
 
+        # slicing query_key_value
         cut_size = self.query_key_value.weight.shape[0] // self.world_size
         self.query_key_value.weight.data = self.query_key_value.weight.data[rank * cut_size: (rank + 1) * cut_size, :]
         self.query_key_value.bias.data   = self.query_key_value.bias.data[rank * cut_size: (rank + 1) * cut_size]
 
+        # slicing dense
         cut_size = self.dense.weight.shape[1] // self.world_size
         self.dense.weight.data = self.dense.weight.data[:, rank * cut_size: (rank + 1) * cut_size]
         self.dense.bias.data   = self.dense.bias.data / self.world_size
 
     def forward(self, *args, **kwargs):
+        # slicing alibi 
         alibi = kwargs["alibi"]
         alibi_cut_size = int(alibi.shape[0]) // self.world_size
         kwargs["alibi"] = alibi[self.rank * alibi_cut_size:(self.rank + 1) * alibi_cut_size, ...]
-        output = super().forward(*(args[0], args[1] / dist.get_world_size()), **kwargs)
+
+        # scaling residual
+        residual = args[1]
+        residual /= self.world_size
+        args = (args[0], residual)
+
+        # calling super
+        output = super().forward(*args, **kwargs)
+
+        # reducing result
         dist.all_reduce(output[0])
         return output
 
@@ -58,17 +60,29 @@ class ParallelBloomAttention(BloomAttention):
 class ParallelBloomMLP(BloomMLP):
     def __init__(self, bloom_mlp: BloomMLP, rank: int, world_size: int):
         self.__dict__ = bloom_mlp.__dict__.copy()
+        self.rank = rank
+        self.world_size = world_size
         
+        # slicing dense_h_to_4h
         cut_size = self.dense_h_to_4h.weight.shape[0] // world_size
         self.dense_h_to_4h.weight.data = self.dense_h_to_4h.weight.data[rank * cut_size: (rank + 1) * cut_size, :]
         self.dense_h_to_4h.bias.data   = self.dense_h_to_4h.bias.data[rank * cut_size: (rank + 1) * cut_size]
 
+        # slicing dense_4h_to_h
         cut_size = self.dense_4h_to_h.weight.shape[1] // world_size
         self.dense_4h_to_h.weight.data = self.dense_4h_to_h.weight.data[:, rank * cut_size: (rank + 1) * cut_size]
         self.dense_4h_to_h.bias.data   = self.dense_4h_to_h.bias.data / world_size
 
     def forward(self, *args, **kwargs):
-        output = super().forward(*(args[0], args[1] / dist.get_world_size()), **kwargs)
+        # scaling residual
+        residual = args[1]
+        residual /= self.world_size
+        args = (args[0], residual)
+
+        # calling super
+        output = super().forward(*args, **kwargs)
+
+        # reducing result
         dist.all_reduce(output)
         return output
 
