@@ -16,13 +16,13 @@ class ParallelAttention(nn.Module):
                  device=None, dtype=None) -> None:
         factory_kwargs = {'device': device, 'dtype': dtype}
         super(ParallelAttention, self).__init__()
-        self.embed_dim = embed_dim // get_world_size()
+        self.embed_dim = embed_dim
 
         assert num_heads % get_world_size() == 0
         self.num_heads = num_heads // get_world_size()
 
-        self.head_dim = embed_dim // num_heads
-        assert self.head_dim * self.num_heads == self.embed_dim, "embed_dim must be divisible by num_heads"
+        self.head_dim = embed_dim // num_heads // get_world_size()
+        assert self.head_dim * self.num_heads * get_world_size() == self.embed_dim, "embed_dim must be divisible by num_heads"
 
         self.query_key_value = nn.Linear(embed_dim, 3 * embed_dim // get_world_size(), **factory_kwargs)
 
