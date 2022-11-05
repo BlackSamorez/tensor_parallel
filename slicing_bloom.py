@@ -2,7 +2,7 @@ import os
 import torch
 import torch.distributed as dist
 
-from transformers.models.bloom.modeling_bloom import BloomModel, BloomBlock
+from transformers.models.bloom.modeling_bloom import BloomModel, BloomBlock, BloomAttention, BloomMLP
 from transformers.models.bloom.configuration_bloom import BloomConfig
 
 from parallel_blocks import ParallelBlock
@@ -22,30 +22,66 @@ def init_process(local_rank, fn, backend=BACKEND):
     fn(local_rank, size)
 
 
-def convert_block_parallel(block: BloomBlock, rank: int, world_size: int, config: BloomConfig):
-    parallel_block = ParallelBlock(config)
-
-    cut_size = 4 * config.hidden_size // world_size
-    parallel_block.mlp.dense_h_to_4h.weight.data = block.mlp.dense_h_to_4h.weight.data[:, rank * cut_size: (rank + 1) * cut_size].clone().detach().contiguous()
-    cut_size = 4 * config.hidden_size // world_size
-    parallel_block.mlp.dense_4h_to_h.weight.data = block.mlp.dense_4h_to_h.weight.data[rank * cut_size: (rank + 1) * cut_size, :].clone().detach().contiguous()
-
-    cut_size = 3 * config.hidden_size // world_size
-    parallel_block.self_attention.query_key_value.weight.data = block.self_attention.query_key_value.weight.data[:, rank * cut_size: (rank + 1) * cut_size].clone().detach().contiguous()
-    cut_size = config.hidden_size // world_size
-    parallel_block.self_attention.dense.weight.data = block.self_attention.dense.weight.data[rank * cut_size: (rank + 1) * cut_size, :].clone().detach().contiguous()
-
-    return parallel_block
+class ParallelBloomAttention(BloomAttention):
+    def forward(self, *args, **kwargs):
+        output = super().forward(*args, **kwargs)
+        dist.all_reduce(output[0])
+        return output
 
 
-def convert_bloom_parallel(model: BloomModel, rank: int, world_size: int, config: BloomConfig):
-    for block in model.h:
-        block = convert_block_parallel(block, rank, world_size, config)
+class ParallelBloomAttention(BloomAttention):
+    def __init__(self, bloom_attention: BloomAttention, rank: int, world_size: int):
+        self.__dict__ = bloom_attention.__dict__.copy()
+
+        self.rank = rank
+        self.world_size = world_size
+
+        self.num_heads = self.num_heads // self.world_size
+
+        cut_size = self.query_key_value.weight.shape[0] // self.world_size
+        self.query_key_value.weight.data = self.query_key_value.weight.data[rank * cut_size: (rank + 1) * cut_size, :]
+        self.query_key_value.bias.data   = self.query_key_value.bias.data[rank * cut_size: (rank + 1) * cut_size]
+
+        cut_size = self.dense.weight.shape[1] // self.world_size
+        self.dense.weight.data = self.dense.weight.data[:, rank * cut_size: (rank + 1) * cut_size]
+        self.dense.bias.data   = self.dense.bias.data / self.world_size
+
+    def forward(self, *args, **kwargs):
+        alibi = kwargs["alibi"]
+        alibi_cut_size = int(alibi.shape[0]) // self.world_size
+        kwargs["alibi"] = alibi[self.rank * alibi_cut_size:(self.rank + 1) * alibi_cut_size, ...]
+        output = super().forward(*(args[0], args[1] / dist.get_world_size()), **kwargs)
+        dist.all_reduce(output[0])
+        return output
+
+
+class ParallelBloomMLP(BloomMLP):
+    def __init__(self, bloom_mlp: BloomMLP, rank: int, world_size: int):
+        self.__dict__ = bloom_mlp.__dict__.copy()
+        
+        cut_size = self.dense_h_to_4h.weight.shape[0] // world_size
+        self.dense_h_to_4h.weight.data = self.dense_h_to_4h.weight.data[rank * cut_size: (rank + 1) * cut_size, :]
+        self.dense_h_to_4h.bias.data   = self.dense_h_to_4h.bias.data[rank * cut_size: (rank + 1) * cut_size]
+
+        cut_size = self.dense_4h_to_h.weight.shape[1] // world_size
+        self.dense_4h_to_h.weight.data = self.dense_4h_to_h.weight.data[:, rank * cut_size: (rank + 1) * cut_size]
+        self.dense_4h_to_h.bias.data   = self.dense_4h_to_h.bias.data / world_size
+
+    def forward(self, *args, **kwargs):
+        output = super().forward(*(args[0], args[1] / dist.get_world_size()), **kwargs)
+        dist.all_reduce(output)
+        return output
+
+
+def slice_bloom(model: BloomModel, rank: int, world_size: int):
+    for i, block in enumerate(model.h):
+        model.h[i].self_attention = ParallelBloomAttention(block.self_attention, rank, world_size)
+        model.h[i].mlp = ParallelBloomMLP(block.mlp, rank, world_size)
 
     return model
 
-def convert_and_scatter_bloom_parallel(model: BloomModel, rank: int, world_size: int, config: BloomConfig):
-    sharded_model = convert_bloom_parallel(model, rank, world_size, BloomConfig.from_pretrained(NAME))
+def slice_and_scatter_bloom(model: BloomModel, rank: int, world_size: int):
+    sharded_model = slice_bloom(model, rank, world_size)
     sharded_model = sharded_model.to(f"cuda:{rank}")
     return sharded_model
 
@@ -60,7 +96,7 @@ def converter_main(rank, size):
         cpu_output = model(test_input).last_hidden_state
 
     print(f"Rank {rank} slicing")
-    sharded_model = convert_and_scatter_bloom_parallel(model, rank, size, BloomConfig.from_pretrained(NAME))
+    sharded_model = slice_and_scatter_bloom(model, rank, size)
     print(f"Rank {rank } testing forward")
     sharded_output = sharded_model(test_input.to(f"cuda:{rank}")).last_hidden_state
 
