@@ -127,8 +127,12 @@ class ParallelLayerWrapper(nn.Module):
 
 
 def wrap_submodules(model: nn.Module, module_rules: dict, rank: int, world_size: int):
-    unique_wrappers = {module: ParallelLayerWrapper(module, module_rules[type(module).__name__], rank=rank, world_size=world_size) for module in model.modules() if type(module).__name__ in module_rules}
-
+    unique_wrappers = {}
+    with torch.no_grad():
+        for name, module in model.named_modules():
+            for pattern, rule in module_rules.items():
+                if re.search(".*" + pattern.replace(".", "\\.")+ "$", name) is not None:
+                    unique_wrappers[module] = ParallelLayerWrapper(module, rule, rank=rank, world_size=world_size)
 
     for parent in list(model.modules()):
         for child_name, child in list(parent.named_children()):

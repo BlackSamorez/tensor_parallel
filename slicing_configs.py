@@ -9,8 +9,8 @@ SLICING_CONFIGS = {
         "mlp.dense_4h_to_h": "horizontal",
     },
     {
-        "BloomAttention": {"input": {"alibi": "cut", 1: "scale"}, "output": {0: "reduce"}, "attributes": {"num_heads": "scale_int"}},
-        "BloomMLP": {"input": {1: "scale"}, "output": {"ALL": "reduce"}, "attributes":{}},
+        "self_attention": {"input": {"alibi": "cut", 1: "scale"}, "output": {0: "reduce"}, "attributes": {"num_heads": "scale_int"}},
+        "mlp": {"input": {1: "scale"}, "output": {"ALL": "reduce"}, "attributes":{}},
     },
 ),
 
