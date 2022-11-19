@@ -9,7 +9,7 @@ SLICING_CONFIGS = {
         "mlp\.dense_4h_to_h": "horizontal",
     },
     {
-        "self_attention": {"input": {"alibi": "cut"}, "output": {}, "attributes": {"num_heads": "scale_int"}},
+        "self_attention": {"input": {"alibi": "cut 0"}, "output": {}, "attributes": {"num_heads": "scale_int"}},
         "self_attention\.dense": {"input": {}, "output": {"ALL": "reduce"}, "attributes": {}},
         "mlp\.dense_4h_to_h": {"input": {}, "output": {"ALL": "reduce"}, "attributes": {}},
     },

@@ -58,14 +58,15 @@ def slice_tensors(key_parameter_iterator, tensor_rules: dict, rank: int, world_s
 def process_input(rules, rank, world_size, *args, **kwargs):
     args = list(args)
     for target, action in rules.items():
-        match action:
-            case "cut":
+        match action.split():
+            case "cut", dim:
+                dim = int(dim)
                 match target:
                     case int(idx):
-                        slice_size= args[idx].shape[0] // world_size
+                        slice_size= args[idx].shape[dim] // world_size
                         args[idx] = args[idx][..., rank * slice_size: (rank + 1) * slice_size, :]
                     case str(name):
-                        slice_size= kwargs[name].shape[0] // world_size
+                        slice_size= kwargs[name].shape[dim] // world_size
                         kwargs[name] = kwargs[name][rank * slice_size: (rank + 1) * slice_size, ...]
                     case _:
                         raise Exception("Fuck you cut input!")
