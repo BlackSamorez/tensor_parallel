@@ -4,6 +4,11 @@ import os
 from transformers.models.bloom.modeling_bloom import BloomModel
 from transformers.models.bert.modeling_bert import BertModel
 NAME = "bigscience/bloom-560m" # "bert-base-uncased"
+MODEL_CLS = BloomModel
+
+from transformers import logging
+logging.set_verbosity_error()
+
 
 from slicer_wrapper import SlicingConfig, tensor_parallel
 from slicing_configs import SLICING_CONFIGS
@@ -25,20 +30,14 @@ def converter_main(rank, size):
 
     if rank == 0:
         print(f"Rank {rank} SINGLE GPU forward")
-        model = BloomModel.from_pretrained(NAME).to("cuda:0")
-        try:
-            target_output = model(test_input).last_hidden_state
-        except:
-            pass
+        model = MODEL_CLS.from_pretrained(NAME).to("cuda:0")
+        target_output = model(test_input).last_hidden_state
 
     print(f"Rank {rank} loading parallel")
-    model = tensor_parallel(BloomModel, SLICING_CONFIGS[NAME], rank=rank, world_size=size).from_pretrained(NAME)
+    model = tensor_parallel(MODEL_CLS, SLICING_CONFIGS[NAME], rank=rank, world_size=size).from_pretrained(NAME)
     model = model.to(f"cuda:{rank}")
     
-    try:
-        sharded_output = model(test_input).last_hidden_state
-    except:
-        pass
+    sharded_output = model(test_input).last_hidden_state
 
     if rank == 0:
         print(f"Asserting allclose")
