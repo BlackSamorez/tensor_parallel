@@ -35,7 +35,7 @@ def slice_bias_horizontal(tensor: torch.Tensor, rank: int, world_size: int) -> t
 
 
 def slice_tensors(key_parameter_iterator, tensor_rules: dict, rank: int, world_size: int):
-    regular_rules = [(re.compile(".*" + key + "\\.(weight|bias)"), value) for key, value in tensor_rules.items()]
+    regular_rules = [(re.compile(key), value) for key, value in tensor_rules.items()]
 
     with torch.no_grad():
         for name, param in key_parameter_iterator:
@@ -132,7 +132,7 @@ def wrap_submodules(model: nn.Module, module_rules: dict, rank: int, world_size:
     with torch.no_grad():
         for name, module in model.named_modules():
             for pattern, rule in module_rules.items():
-                if re.search(".*" + pattern + "$", name) is not None:
+                if re.search(pattern, name) is not None:
                     unique_wrappers[module] = ParallelLayerWrapper(module, rule, rank=rank, world_size=world_size)
 
     for parent in list(model.modules()):
