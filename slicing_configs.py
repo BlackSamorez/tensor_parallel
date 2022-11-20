@@ -29,5 +29,19 @@ SLICING_CONFIGS = {
         "attention\.output\.dense": {"input": {}, "output": {0: "reduce"}, "attributes": {}},
         "[0-9]\.output\.dense": {"input": {}, "output": {"ALL": "reduce"}, "attributes":{}},
     },
+),
+
+"t5-small": SlicingConfig(
+    {
+        "SelfAttention\.q": "vertical",
+        "SelfAttention\.k": "vertical",
+        "SelfAttention\.v": "vertical",
+        "relative_attention_bias": "horizontal",
+        "SelfAttention\.o": "horizontal",
+    },
+    {
+        "SelfAttention": {"input": {}, "output": {0: "reduce"}, "attributes": {"n_heads": "scale_int", "inner_dim": "scale_int"}},
+        "relative_attention_bias": {"input": {}, "output": {}, "attributes": {"embedding_dim": "scale_int"}},
+    },
 )
 }
