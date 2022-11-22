@@ -22,7 +22,6 @@ setup(
     # Choose your license
     license='MIT',
     packages=find_packages(),
-    py_modules=["parallel_blocks.py"],
 
     classifiers=[
         # Indicate who your project is intended for
