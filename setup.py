@@ -7,7 +7,7 @@ here = os.path.abspath(os.path.dirname(__file__))
 # loading README
 # long_description = prefetch_generator.__doc__
 
-version_string = '1.0.8'
+version_string = '1.0.9'
 
 setup(
     name="petals_local_parallel",
