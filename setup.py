@@ -7,10 +7,10 @@ here = os.path.abspath(os.path.dirname(__file__))
 # loading README
 # long_description = prefetch_generator.__doc__
 
-version_string = '1.0.10'
+version_string = '1.0.1'
 
 setup(
-    name="petals_local_parallel",
+    name="TensorParallel",
     version=version_string,
     description="description",
     # long_description=long_description,
