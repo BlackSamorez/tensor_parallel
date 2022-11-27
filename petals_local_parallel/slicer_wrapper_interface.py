@@ -4,12 +4,10 @@ import torch.distributed as dist
 
 def tensor_parallel(model_cls, slicing_config: SlicingConfig = None, rank: int = None, world_size: int = None):
     if slicing_config in None:
-        for model_class, config in SLICING_CONFIGS.values():
-            if model_cls.__name__ == model_class:
-                slicing_config = config
-                break
-        else:
-            raise NotImplemented("Unknown model and lazy mode not implemented yet. Must specify config")
+        try:
+            slicing_config = SLICING_CONFIGS[model_cls.__name__]
+        except KeyError:
+            raise NotImplemented(f"Unknown model type {model_cls.__name__} and lazy mode not implemented yet. Must specify config")
 
     if rank in None:
         if dist.is_initialized():
