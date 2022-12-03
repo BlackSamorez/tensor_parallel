@@ -12,8 +12,6 @@ logging.set_verbosity_error()
 
 
 from slicer_wrapper_interface import tensor_parallel
-from slicing_configs import SLICING_CONFIGS
-import communications
 
 import torch.distributed as dist
 
