@@ -174,9 +174,11 @@ def get_tensor_parallel_model_slice(model_cls, slicing_config: SlicingConfig, ra
 
 
 class MultithreadedModule(nn.Module):
-    def __init__(self, slices) -> None:
+    def __init__(self, slices, devices) -> None:
         super().__init__()
+        assert(len(slices) == len(devices))
         self.slices = slices
+        self.devices = devices
 
     def forward(self, *args, **kwargs):
         inputs = [args for _ in range(len(self.slices))]
@@ -187,3 +189,6 @@ class MultithreadedModule(nn.Module):
     def from_pretrained(self, *args, **kwargs):
         self.slices = [slice.from_pretrained(*args, **kwargs) for slice in self.slices]
         return self
+
+    def scatter(self):
+        self.slices = [slice.to(device) for slice, device in zip(self.slices, self.devices)]

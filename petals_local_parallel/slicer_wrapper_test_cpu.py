@@ -20,7 +20,8 @@ def converter_main():
     target_output = model(test_input).last_hidden_state
 
     print(f"Loading slices")
-    model = tensor_parallel(MODEL_CLS).from_pretrained(NAME)
+    model = tensor_parallel(MODEL_CLS, devices=["cpu", "cpu"]).from_pretrained(NAME)
+    model.scatter()
     
     sharded_output = model(test_input).last_hidden_state
 
