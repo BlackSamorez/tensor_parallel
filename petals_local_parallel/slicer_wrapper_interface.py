@@ -1,25 +1,30 @@
 from slicer_wrapper import SlicingConfig, slice_tensors, wrap_submodules
 from slicing_configs import SLICING_CONFIGS
+import communications
+
 import torch.distributed as dist
 
 def tensor_parallel(model_cls, slicing_config: SlicingConfig = None, rank: int = None, world_size: int = None):
-    if slicing_config in None:
+    communications.TENSOR_PARALLEL_COMMUNICATOR = communications.get_optimal_communicator() # reinitialize communicator with context
+
+    if slicing_config is None:
         try:
             slicing_config = SLICING_CONFIGS[model_cls.__name__]
         except KeyError:
             raise NotImplemented(f"Unknown model type {model_cls.__name__} and lazy mode not implemented yet. Must specify config")
 
-    if rank in None:
+    if rank is None:
         if dist.is_initialized():
             rank = dist.get_rank()
         else:
             raise Exception("Rank must be specified if torch.distributed is not initialized")
 
-    if world_size in None:
+    if world_size is None:
         if dist.is_initialized():
             world_size = dist.get_world_size()
         else:
             raise Exception("World size must be specified if torch.distributed is not initialized")
+
     class _TensorParallel(model_cls):
         slicing_config = None
         rank = None

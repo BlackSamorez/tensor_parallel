@@ -2,6 +2,7 @@ import torch, torch.nn as nn
 import torch.distributed as dist
 import re
 
+import communications
 
 class SlicingConfig():
     def __init__(self, tensor_rules: dict, module_rules: dict):
@@ -91,9 +92,9 @@ def process_output(output, rules):
             case "reduce":
                 match target:
                     case "ALL":
-                        dist.all_reduce(output)
+                        output = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output)
                     case int(idx):
-                        dist.all_reduce(output[idx])
+                        output[idx] = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output[idx])
                     case _:
                         raise Exception("Fuck you output taget!")
             case _:
