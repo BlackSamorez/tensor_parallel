@@ -1,4 +1,3 @@
-from typing import List
 import torch
 import torch.nn as nn
 import torch.distributed as dist
@@ -181,8 +180,21 @@ class MultithreadedModule(nn.Module):
         self.devices = devices
 
     def forward(self, *args, **kwargs):
-        inputs = [args for _ in range(len(self.slices))]
-        kwargs_tup = tuple([kwargs for _ in range(len(self.slices))])
+        def scatter_map(obj):
+            if isinstance(obj, torch.Tensor):
+                return [obj.clone().to(targets) for targets in self.devices]
+            if isinstance(obj, tuple) and hasattr(obj, "_asdict") and hasattr(obj, "_fields"):
+                return [type(obj)(*args) for args in zip(*map(scatter_map, obj))]
+            if isinstance(obj, tuple) and len(obj) > 0:
+                return list(zip(*map(scatter_map, obj)))
+            if isinstance(obj, list) and len(obj) > 0:
+                return [list(i) for i in zip(*map(scatter_map, obj))]
+            if isinstance(obj, dict) and len(obj) > 0:
+                return [type(obj)(i) for i in zip(*map(scatter_map, obj.items()))]
+            return [obj for targets in self.devices]
+
+        inputs = scatter_map(args)
+        kwargs_tup = scatter_map(kwargs)
 
         return parallel_apply(self.slices, inputs, kwargs_tup=kwargs_tup)[0]
 

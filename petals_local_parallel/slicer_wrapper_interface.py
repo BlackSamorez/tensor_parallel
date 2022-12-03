@@ -17,7 +17,8 @@ def tensor_parallel(model_cls, slicing_config: SlicingConfig = None, devices=Non
         communications.TENSOR_PARALLEL_COMMUNICATOR = communications.TorchrunCommunicator()
         return get_tensor_parallel_model_slice(model_cls, slicing_config, dist.get_rank(), dist.get_world_size()) # each torchrun process only need one slice
     else:
-        communications.TENSOR_PARALLEL_COMMUNICATOR = communications.GPUCommunicator(devices) # TODO: this is for tests so make it more obscure
+        assert(devices is not None), "devices must be provided when using tensor_parallel without torchrun"
+        communications.TENSOR_PARALLEL_COMMUNICATOR = communications.CentralizedCommunicator(devices) # TODO: this is for tests so make it more obscure
         slices = []
         for i in range(len(devices)):
             slices.append(get_tensor_parallel_model_slice(model_cls, slicing_config, i, len(devices)))
