@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: python3.10
     steps:
 
       - name: checkout repo content
@@ -17,7 +17,7 @@ jobs:
       - name: setup python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.11' # install the python version needed
+          python-version: '3.10' # install the python version needed
           
       - name: install python packages
         run: |
