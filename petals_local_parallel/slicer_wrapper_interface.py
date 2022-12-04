@@ -6,7 +6,7 @@ import torch
 import torch.distributed as dist
 
 
-def tensor_parallel(model_cls, slicing_config: SlicingConfig = None, devices=None):
+def tensor_parallel(model_cls, devices, slicing_config: SlicingConfig = None):
     if slicing_config is None:
         try:
             slicing_config = SLICING_CONFIGS[model_cls.__name__]
@@ -15,7 +15,8 @@ def tensor_parallel(model_cls, slicing_config: SlicingConfig = None, devices=Non
 
     if dist.is_initialized():
         communications.TENSOR_PARALLEL_COMMUNICATOR = communications.TorchrunCommunicator()
-        return get_tensor_parallel_model_slice(model_cls, slicing_config, dist.get_rank(), dist.get_world_size()) # each torchrun process only need one slice
+        rank = dist.get_rank()
+        return get_tensor_parallel_model_slice(model_cls, slicing_config, rank, dist.get_world_size()) # each torchrun process only need one slice
     else:
         assert(devices is not None), "devices must be provided when using tensor_parallel without torchrun"
         communications.TENSOR_PARALLEL_COMMUNICATOR = communications.CentralizedCommunicator(devices) # TODO: this is for tests so make it more obscure
