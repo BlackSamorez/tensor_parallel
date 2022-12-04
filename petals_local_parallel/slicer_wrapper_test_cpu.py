@@ -17,6 +17,8 @@ def converter_main():
 
     print(f"Whole model forward")
     model = MODEL_CLS.from_pretrained(NAME)
+
+    print(f"Whole model is loaded")
     target_output = model(test_input).last_hidden_state
 
     print(f"Loading slices")
