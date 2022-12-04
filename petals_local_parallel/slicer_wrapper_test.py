@@ -12,7 +12,6 @@ logging.set_verbosity_error()
 
 
 from slicer_wrapper_interface import tensor_parallel
-from slicing_configs import SLICING_CONFIGS
 
 import torch.distributed as dist
 
@@ -35,7 +34,7 @@ def converter_main(rank, size):
         target_output = model(test_input).last_hidden_state
 
     print(f"Rank {rank} loading parallel")
-    model = tensor_parallel(MODEL_CLS, SLICING_CONFIGS[NAME], rank=rank, world_size=size).from_pretrained(NAME)
+    model = tensor_parallel(MODEL_CLS).from_pretrained(NAME)
     model = model.to(f"cuda:{rank}")
     
     sharded_output = model(test_input).last_hidden_state

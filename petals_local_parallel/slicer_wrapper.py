@@ -1,7 +1,10 @@
-import torch, torch.nn as nn
+import torch
+import torch.nn as nn
 import torch.distributed as dist
+from torch.nn.parallel import parallel_apply
 import re
 
+import communications
 
 class SlicingConfig():
     def __init__(self, tensor_rules: dict, module_rules: dict):
@@ -91,9 +94,9 @@ def process_output(output, rules):
             case "reduce":
                 match target:
                     case "ALL":
-                        dist.all_reduce(output)
+                        output = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output)
                     case int(idx):
-                        dist.all_reduce(output[idx])
+                        output[idx] = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output[idx])
                     case _:
                         raise Exception("Fuck you output taget!")
             case _:
@@ -139,3 +142,65 @@ def wrap_submodules(model: nn.Module, module_rules: dict, rank: int, world_size:
         for child_name, child in list(parent.named_children()):
             if child in unique_wrappers:
                 setattr(parent, child_name, unique_wrappers[child])
+
+
+def get_tensor_parallel_model_slice(model_cls, slicing_config: SlicingConfig, rank: int, world_size: int):
+    class _TensorParallel(model_cls):
+        slicing_config = None
+        rank = None
+        world_size = None
+        def __new__(cls, *args, __slicing_config=slicing_config, __rank=rank, __world_size=world_size, **kwargs):
+            _TensorParallel.slicing_config = __slicing_config
+            _TensorParallel.rank = __rank
+            _TensorParallel.world_size = __world_size
+
+            model = model_cls(*args, **kwargs)  # Create an instance of vanilla model
+            
+            # modify untrained parameters/buffers
+            slice_tensors(model.named_parameters(), slicing_config.tensor_rules, rank, world_size)
+            return model
+
+        @classmethod
+        def _load_pretrained_model(cls, model: model_cls, state_dict, loaded_keys, *args, **kwargs):
+            slice_tensors(state_dict.items(), slicing_config.tensor_rules, rank, world_size)
+            result = super()._load_pretrained_model(model, state_dict, loaded_keys, *args, **kwargs)
+            
+            wrap_submodules(model, slicing_config.module_rules, rank, world_size)
+
+            return result
+        
+    return _TensorParallel
+
+
+class MultithreadedModule(nn.Module):
+    def __init__(self, slices, devices) -> None:
+        super().__init__()
+        assert(len(slices) == len(devices))
+        self.slices = slices
+        self.devices = devices
+
+    def forward(self, *args, **kwargs):
+        def scatter_map(obj):
+            if isinstance(obj, torch.Tensor):
+                return [obj.clone().to(targets) for targets in self.devices]
+            if isinstance(obj, tuple) and hasattr(obj, "_asdict") and hasattr(obj, "_fields"):
+                return [type(obj)(*args) for args in zip(*map(scatter_map, obj))]
+            if isinstance(obj, tuple) and len(obj) > 0:
+                return list(zip(*map(scatter_map, obj)))
+            if isinstance(obj, list) and len(obj) > 0:
+                return [list(i) for i in zip(*map(scatter_map, obj))]
+            if isinstance(obj, dict) and len(obj) > 0:
+                return [type(obj)(i) for i in zip(*map(scatter_map, obj.items()))]
+            return [obj for targets in self.devices]
+
+        inputs = scatter_map(args)
+        kwargs_tup = scatter_map(kwargs)
+
+        return parallel_apply(self.slices, inputs, kwargs_tup=kwargs_tup)[0]
+
+    def from_pretrained(self, *args, **kwargs):
+        self.slices = [slice.from_pretrained(*args, **kwargs) for slice in self.slices]
+        return self
+
+    def scatter(self):
+        self.slices = [slice.to(device) for slice, device in zip(self.slices, self.devices)]

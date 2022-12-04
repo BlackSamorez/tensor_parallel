@@ -1,31 +1,25 @@
-from slicer_wrapper import SlicingConfig, slice_tensors, wrap_submodules
+from slicer_wrapper import SlicingConfig, get_tensor_parallel_model_slice, MultithreadedModule
+from slicing_configs import SLICING_CONFIGS
+import communications
 
-def tensor_parallel(model_cls, slicing_config: SlicingConfig, rank: int, world_size: int):
-    global SLICING_CONFIG
-    SLICING_CONFIG = slicing_config
+import torch
+import torch.distributed as dist
 
-    global RANK
-    RANK = rank
 
-    global WORLD_SIZE
-    WORLD_SIZE = world_size
+def tensor_parallel(model_cls, slicing_config: SlicingConfig = None, devices=None):
+    if slicing_config is None:
+        try:
+            slicing_config = SLICING_CONFIGS[model_cls.__name__]
+        except KeyError:
+            raise NotImplemented(f"Unknown model type {model_cls.__name__} and lazy mode not implemented yet. Must specify config")
 
-    class _TensorParallel(model_cls):
-        def __new__(cls, *args, **kwargs):
-            model = model_cls(*args, **kwargs)  # Create an instance of vanilla model
-            
-            # modify untrained parameters/buffers
-            slice_tensors(model.named_parameters(), SLICING_CONFIG.tensor_rules, RANK, WORLD_SIZE)
-
-            return model
-
-        @classmethod
-        def _load_pretrained_model(cls, model: model_cls, state_dict, loaded_keys, *args, **kwargs):
-            slice_tensors(state_dict.items(), SLICING_CONFIG.tensor_rules, RANK, WORLD_SIZE)
-            result = super()._load_pretrained_model(model, state_dict, loaded_keys, *args, **kwargs)
-            
-            wrap_submodules(model, SLICING_CONFIG.module_rules, RANK, WORLD_SIZE)
-
-            return result
-        
-    return _TensorParallel
+    if dist.is_initialized():
+        communications.TENSOR_PARALLEL_COMMUNICATOR = communications.TorchrunCommunicator()
+        return get_tensor_parallel_model_slice(model_cls, slicing_config, dist.get_rank(), dist.get_world_size()) # each torchrun process only need one slice
+    else:
+        assert(devices is not None), "devices must be provided when using tensor_parallel without torchrun"
+        communications.TENSOR_PARALLEL_COMMUNICATOR = communications.CentralizedCommunicator(devices) # TODO: this is for tests so make it more obscure
+        slices = []
+        for i in range(len(devices)):
+            slices.append(get_tensor_parallel_model_slice(model_cls, slicing_config, i, len(devices)))
+        return MultithreadedModule(slices, devices)

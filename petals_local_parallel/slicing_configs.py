@@ -1,7 +1,7 @@
 from slicer_wrapper import SlicingConfig
 
 SLICING_CONFIGS = {
-"bigscience/bloom-560m": SlicingConfig(
+"BloomModel": SlicingConfig(
     {
         ".*self_attention\.query_key_value\.(weight|bias)": "vertical",
         ".*self_attention\.dense\.(weight|bias)": "horizontal",
@@ -15,7 +15,7 @@ SLICING_CONFIGS = {
     },
 ),
 
-"bert-base-uncased": SlicingConfig(
+"BertModel": SlicingConfig(
     {
         ".*self\.query\.(weight|bias)": "vertical",
         ".*self\.key\.(weight|bias)": "vertical",
@@ -31,7 +31,7 @@ SLICING_CONFIGS = {
     },
 ),
 
-"t5-small": SlicingConfig(
+"T5Model": SlicingConfig(
     {
         ".*SelfAttention\.q\.(weight|bias)": "vertical",
         ".*SelfAttention\.k\.(weight|bias)": "vertical",
