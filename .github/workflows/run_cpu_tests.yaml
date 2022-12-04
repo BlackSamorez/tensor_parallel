@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubunty-latest
+    runs-on: ubuntu-latest
     steps:
 
       - name: checkout repo content
