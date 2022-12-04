@@ -6,7 +6,7 @@ on:
 
 jobs:
   build:
-    runs-on: python3.10
+    runs-on: ubunty-latest
     steps:
 
       - name: checkout repo content
