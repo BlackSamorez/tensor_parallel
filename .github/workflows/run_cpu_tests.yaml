@@ -25,4 +25,3 @@ on:
       - name: slicer wrapper test on cpu  # run .py script
         run: |
           python petals_locsl_parallel/slicer_wrapper_test_cpu.py
-          
