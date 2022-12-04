@@ -26,4 +26,4 @@ jobs:
           
       - name: slicer wrapper test on cpu  # run .py script
         run: |
-          python3 petals_local_parallel/slicer_wrapper_test_cpu.py
+          python petals_local_parallel/slicer_wrapper_test_cpu.py
