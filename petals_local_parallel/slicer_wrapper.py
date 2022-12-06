@@ -145,14 +145,14 @@ def wrap_submodules(model: nn.Module, module_rules: dict, rank: int, world_size:
 
 
 def get_tensor_parallel_model_slice(model_cls, slicing_config: SlicingConfig, rank: int, world_size: int):
-    class _TensorParallel(model_cls):
+    class _TensorParallelSlice(model_cls):
         slicing_config = None
         rank = None
         world_size = None
         def __new__(cls, *args, __slicing_config=slicing_config, __rank=rank, __world_size=world_size, **kwargs):
-            _TensorParallel.slicing_config = __slicing_config
-            _TensorParallel.rank = __rank
-            _TensorParallel.world_size = __world_size
+            _TensorParallelSlice.slicing_config = __slicing_config
+            _TensorParallelSlice.rank = __rank
+            _TensorParallelSlice.world_size = __world_size
 
             model = model_cls(*args, **kwargs)  # Create an instance of vanilla model
             
@@ -169,14 +169,15 @@ def get_tensor_parallel_model_slice(model_cls, slicing_config: SlicingConfig, ra
 
             return result
         
-    return _TensorParallel
+    return _TensorParallelSlice
 
 
 class MultithreadedModule(nn.Module):
-    def __init__(self, slices, devices) -> None:
+    def __init__(self, slice_types, devices) -> None:
         super().__init__()
-        assert(len(slices) == len(devices))
-        self.slices = slices
+        assert(len(slice_types) == len(devices))
+        self.slice_types = slice_types
+        self.slices = torch.nn.ModuleList()
         self.devices = devices
 
     def forward(self, *args, **kwargs):
@@ -199,8 +200,10 @@ class MultithreadedModule(nn.Module):
         return parallel_apply(self.slices, inputs, kwargs_tup=kwargs_tup)[0]
 
     def from_pretrained(self, *args, **kwargs):
-        self.slices = [slice.from_pretrained(*args, **kwargs) for slice in self.slices]
+        self.slices = torch.nn.ModuleList([slice_type.from_pretrained(*args, **kwargs) for slice_type in self.slice_types])
         return self
 
     def scatter(self):
-        self.slices = [slice.to(device) for slice, device in zip(self.slices, self.devices)]
+        for slice, device in zip(self.slices, self.devices):
+            slice = slice.to(device)
+        return self
