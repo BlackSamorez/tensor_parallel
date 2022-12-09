@@ -88,15 +88,15 @@ def process_input(rules, rank, world_size, *args, **kwargs):
     return args, kwargs
 
 
-def process_output(output, rules):
+def process_output(output, rules, rank: int):
     for target, action in rules.items():
         match action:
             case "reduce":
                 match target:
                     case "ALL":
-                        output = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output)
+                        output = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output, rank)
                     case int(idx):
-                        output[idx] = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output[idx])
+                        output[idx] = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output[idx], rank)
                     case _:
                         raise Exception("Fuck you output taget!")
             case _:
@@ -127,7 +127,7 @@ class ParallelLayerWrapper(nn.Module):
     def forward(self, *args, **kwargs):
         args, kwargs = process_input(self.input_rules, self.rank, self.world_size, *args, **kwargs)
         output = self.module(*args, **kwargs)
-        return process_output(output, self.output_rules)
+        return process_output(output, self.output_rules, self.rank)
 
 
 def wrap_submodules(model: nn.Module, module_rules: dict, rank: int, world_size: int):
