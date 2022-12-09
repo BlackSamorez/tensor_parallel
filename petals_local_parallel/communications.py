@@ -16,7 +16,7 @@ class TorchrunCommunicator(Communicator):
     def __init__(self) -> None:
         super().__init__()
 
-    def all_reduce(self, x: Tensor) -> Tensor:
+    def all_reduce(self, x: Tensor, rank: int) -> Tensor:
         dist.all_reduce(x)
         return x
 
@@ -33,7 +33,7 @@ class CentralizedCommunicator(Communicator):
 
         self.buffer: torch.Tensor = None
 
-    def all_reduce(self, x: Tensor) -> Tensor:
+    def all_reduce(self, x: Tensor, rank: int) -> Tensor:
         with self.cv:
             if self.done:
                 while self.done:
