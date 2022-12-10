@@ -4,6 +4,8 @@ import torch.distributed as dist
 from torch.nn.parallel import parallel_apply
 import re
 
+from transformers import PreTrainedModel, PretrainedConfig
+
 import communications
 
 class SlicingConfig():
@@ -172,9 +174,9 @@ def get_tensor_parallel_model_slice(model_cls, slicing_config: SlicingConfig, ra
     return _TensorParallelSlice
 
 
-class MultithreadedModule(nn.Module):
+class MultithreadedModule(PreTrainedModel):
     def __init__(self, slice_types, devices) -> None:
-        super().__init__()
+        super().__init__(PretrainedConfig()) # Temporary empty config. Gets replaced in from_pretrained
         assert(len(slice_types) == len(devices))
         self.slice_types = slice_types
         self.slices = torch.nn.ModuleList()
@@ -201,9 +203,10 @@ class MultithreadedModule(nn.Module):
 
     def from_pretrained(self, *args, **kwargs):
         self.slices = torch.nn.ModuleList([slice_type.from_pretrained(*args, **kwargs) for slice_type in self.slice_types])
+        self.config = self.slices[0].config
         return self.scatter()
 
     def scatter(self):
         for slice, device in zip(self.slices, self.devices):
-            slice = slice.to(device)
+            slice.to(device, non_blocking=True)
         return self
