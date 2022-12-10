@@ -38,7 +38,7 @@ class ScatterReduce:
 
 
 class AllGather:
-    def __init__(self, world_size: int, gather_op: torch.cat, ordered: bool = True):
+    def __init__(self, world_size: int, gather_op = torch.cat, ordered: bool = True):
         self.world_size = world_size
         self.parts = []
         self.parts_ready = threading.Event()
