@@ -201,7 +201,7 @@ class MultithreadedModule(nn.Module):
 
     def from_pretrained(self, *args, **kwargs):
         self.slices = torch.nn.ModuleList([slice_type.from_pretrained(*args, **kwargs) for slice_type in self.slice_types])
-        return self
+        return self.scatter()
 
     def scatter(self):
         for slice, device in zip(self.slices, self.devices):
