@@ -57,7 +57,7 @@ class AllGather:
                 parts = sorted(parts)  # sorted by rank
             parts = [part.to(x.device, non_blocking=True) for r, part in parts]
             # note: for one of the parts with r == rank, part.to(device) is a no-op
-            return self.gather_op(parts)
+            return self.gather_op(parts, dim=-1)
         finally:
             self.parts = []
             self.parts_ready = threading.Event()

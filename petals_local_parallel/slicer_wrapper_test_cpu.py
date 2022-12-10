@@ -24,6 +24,7 @@ def converter_main():
     print(f"Loading slices")
     model = tensor_parallel(MODEL_CLS, devices=["cpu", "cpu"]).from_pretrained(NAME)
     
+    print(f"Slices forward")
     sharded_output = model(test_input).last_hidden_state.cpu()
 
     print(f"Asserting allclose")

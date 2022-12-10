@@ -6,12 +6,9 @@ import re
 
 from transformers import PreTrainedModel, PretrainedConfig
 
+from slicing_config import SlicingConfig
+from autoconfig import build_default_slicing_config
 import communications
-
-class SlicingConfig():
-    def __init__(self, tensor_rules: dict, module_rules: dict):
-        self.tensor_rules = tensor_rules
-        self.module_rules = module_rules
                 
 
 def slice_weight_vertical(tensor: torch.Tensor, rank: int, world_size: int) -> torch.Tensor:
@@ -100,7 +97,15 @@ def process_output(output, rules, rank: int):
                     case int(idx):
                         output[idx] = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output[idx], rank)
                     case _:
-                        raise Exception("Fuck you output taget!")
+                        raise Exception("Fuck you reduce taget!")
+            case "gather":
+                match target:
+                    case "ALL":
+                        output = communications.TENSOR_PARALLEL_COMMUNICATOR.all_gather(output, rank)
+                    case int(idx):
+                        output[idx] = communications.TENSOR_PARALLEL_COMMUNICATOR.all_gather(output[idx], rank)
+                    case _:
+                        raise Exception("Fuck you gather taget!")
             case _:
                 raise Exception("Fuck you output action!")
     return output
@@ -148,26 +153,26 @@ def wrap_submodules(model: nn.Module, module_rules: dict, rank: int, world_size:
 
 def get_tensor_parallel_model_slice(model_cls, slicing_config: SlicingConfig, rank: int, world_size: int):
     class _TensorParallelSlice(model_cls):
-        slicing_config = None
-        rank = None
-        world_size = None
         def __new__(cls, *args, __slicing_config=slicing_config, __rank=rank, __world_size=world_size, **kwargs):
             _TensorParallelSlice.slicing_config = __slicing_config
             _TensorParallelSlice.rank = __rank
             _TensorParallelSlice.world_size = __world_size
 
             model = model_cls(*args, **kwargs)  # Create an instance of vanilla model
-            
+
+            if _TensorParallelSlice.slicing_config is None:
+                _TensorParallelSlice.slicing_config = build_default_slicing_config(model)
+
             # modify untrained parameters/buffers
-            slice_tensors(model.named_parameters(), slicing_config.tensor_rules, rank, world_size)
+            slice_tensors(model.named_parameters(), _TensorParallelSlice.slicing_config.tensor_rules, rank, world_size)
             return model
 
         @classmethod
         def _load_pretrained_model(cls, model: model_cls, state_dict, loaded_keys, *args, **kwargs):
-            slice_tensors(state_dict.items(), slicing_config.tensor_rules, rank, world_size)
+            slice_tensors(state_dict.items(), _TensorParallelSlice.slicing_config.tensor_rules, _TensorParallelSlice.rank, _TensorParallelSlice.world_size)
             result = super()._load_pretrained_model(model, state_dict, loaded_keys, *args, **kwargs)
             
-            wrap_submodules(model, slicing_config.module_rules, rank, world_size)
+            wrap_submodules(model, _TensorParallelSlice.slicing_config.module_rules, _TensorParallelSlice.rank, _TensorParallelSlice.world_size)
 
             return result
         
