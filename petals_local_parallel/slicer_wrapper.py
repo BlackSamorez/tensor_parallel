@@ -107,9 +107,9 @@ def wrap_submodules(model: nn.Module, module_rules: dict, rank: int, world_size:
     unique_output_transforms = {op for rules in module_rules.values() for op in rules['output'].values()}
     transform_map = {}
     for transform in unique_output_transforms:
-        if transform == 'allreduce':
-            transform_map[transform] = AllReduce(world_size)
-        elif transform == 'allgather':
+        if transform == 'sum':
+            transform_map[transform] = AllReduce(world_size, reduce_op=sum)
+        elif transform == 'gather':
             transform_map[transform] = AllGather(world_size, gather_op=lambda xs: torch.cat(xs, dim=-1))
         elif callable(transform):
             transform_map[transform] = transform  # user-defined transform, no action needed
