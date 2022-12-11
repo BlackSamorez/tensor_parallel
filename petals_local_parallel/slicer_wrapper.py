@@ -4,6 +4,7 @@ from typing import Callable, Dict, Iterator, Tuple, Union
 import torch
 import torch.nn as nn
 from autoconfig import build_default_slicing_config
+from all_to_all_communication_primitives import AllReduce, AllGather
 from slicing_config import SlicingConfig
 from torch.nn.parallel import parallel_apply
 from transformers import PreTrainedModel, PretrainedConfig
@@ -55,9 +56,10 @@ def process_input(rules: Dict[Arg, str], rank: int, world_size: int, *args, **kw
     for target, action in rules.items():
         if not isinstance(extended_kwargs.get(target), torch.Tensor):
             continue  # optional parameter is None or False
-        action_type, *maybe_dim = action
+        action_type, *opts = action.split()
         if action_type == "cut":
-            extended_kwargs[target] = extended_kwargs[target].tensor_split(world_size, dim=maybe_dim)[rank]
+            dim = int(opts[0])
+            extended_kwargs[target] = extended_kwargs[target].tensor_split(world_size, dim=dim)[rank]
         elif action_type == "scale":
             extended_kwargs[target] = extended_kwargs[target] / world_size
         else:
@@ -102,6 +104,22 @@ class ParallelLayerWrapper(nn.Module):
 
 
 def wrap_submodules(model: nn.Module, module_rules: dict, rank: int, world_size: int):
+    unique_output_transforms = {op for rules in module_rules.values() for op in rules['output'].values()}
+    transform_map = {}
+    for transform in unique_output_transforms:
+        if transform == 'allreduce':
+            transform_map[transform] = AllReduce(world_size)
+        elif transform == 'allgather':
+            transform_map[transform] = AllGather(world_size, gather_op=lambda xs: torch.cat(xs, dim=-1))
+        elif callable(transform):
+            transform_map[transform] = transform  # user-defined transform, no action needed
+        else:
+            raise NotImplementedError(f"Unknown output transform {transform}")
+
+    for rules in module_rules.values():
+        for key, rule in rules['output'].items():
+            rules['output'][key] = transform_map[rule]
+
     unique_wrappers = {}
     with torch.no_grad():
         for name, module in model.named_modules():

@@ -10,8 +10,8 @@ SLICING_CONFIGS = {
     },
     {
         ".*self_attention$": {"input": {"alibi": "cut 0"}, "output": {}, "attributes": {"num_heads": "scale_int"}},
-        ".*self_attention\.dense$": {"input": {}, "output": {"ALL": "reduce"}, "attributes": {}},
-        ".*mlp\.dense_4h_to_h$": {"input": {}, "output": {"ALL": "reduce"}, "attributes": {}},
+        ".*self_attention\.dense$": {"input": {}, "output": {0: "allreduce"}, "attributes": {}},
+        ".*mlp\.dense_4h_to_h$": {"input": {}, "output": {0: "allreduce"}, "attributes": {}},
     },
 ),
 
@@ -26,8 +26,8 @@ SLICING_CONFIGS = {
     },
     {
         ".*attention\.self$": {"input": {}, "output": {}, "attributes": {"num_attention_heads": "scale_int", "all_head_size": "scale_int"}},
-        ".*attention\.output\.dense$": {"input": {}, "output": {0: "reduce"}, "attributes": {}},
-        ".*[0-9]\.output\.dense$": {"input": {}, "output": {"ALL": "reduce"}, "attributes":{}},
+        ".*attention\.output\.dense$": {"input": {}, "output": {0: "allreduce"}, "attributes": {}},
+        ".*[0-9]\.output\.dense$": {"input": {}, "output": {0: "allreduce"}, "attributes":{}},
     },
 ),
 
@@ -44,9 +44,9 @@ SLICING_CONFIGS = {
         ".*DenseReluDense\.wo\.(weight|bias)": "horizontal",
     },
     {
-        ".*SelfAttention$": {"input": {}, "output": {0: "reduce"}, "attributes": {"n_heads": "scale_int", "inner_dim": "scale_int"}},
+        ".*SelfAttention$": {"input": {}, "output": {0: "allreduce"}, "attributes": {"n_heads": "scale_int", "inner_dim": "scale_int"}},
         ".*relative_attention_bias$": {"input": {}, "output": {}, "attributes": {"embedding_dim": "scale_int"}},
-        ".*DenseReluDense$": {"input": {}, "output": {"ALL": "reduce"}, "attributes": {}},
+        ".*DenseReluDense$": {"input": {}, "output": {0: "allreduce"}, "attributes": {}},
     },
 )
 }
