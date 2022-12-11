@@ -1,121 +1,86 @@
+import re
+from typing import Callable, Dict, Iterator, Sequence, Tuple, Union
+
 import torch
 import torch.nn as nn
-import torch.distributed as dist
+from autoconfig import build_default_slicing_config
+from slicing_config import SlicingConfig
 from torch.nn.parallel import parallel_apply
-import re
-
 from transformers import PreTrainedModel, PretrainedConfig
 
-from slicing_config import SlicingConfig
-from autoconfig import build_default_slicing_config
-import communications
-                
+
+Pattern, Arg = str, Union[int, str]
+
 
 def slice_weight_vertical(tensor: torch.Tensor, rank: int, world_size: int) -> torch.Tensor:
-    assert(tensor.shape[-2] % world_size == 0)
-    slice_size = tensor.shape[-2] // world_size
-
-    return tensor[..., rank * slice_size: (rank + 1) * slice_size, :]
+    return tensor.tensor_split(world_size, dim=-2)[rank]
 
 
 def slice_bias_vertical(tensor: torch.Tensor, rank: int, world_size: int) -> torch.Tensor:
-    assert(tensor.shape[-1] % world_size == 0)
-    slice_size = tensor.shape[-1] // world_size
-
-    return tensor[rank * slice_size: (rank + 1) * slice_size]
+    return tensor.tensor_split(world_size)[rank]
 
 
 def slice_weight_horizontal(tensor: torch.Tensor, rank: int, world_size: int) -> torch.Tensor:
-    assert(tensor.shape[-1] % world_size == 0)
-    slice_size = tensor.shape[-1] // world_size
-
-    return tensor[..., rank * slice_size: (rank + 1) * slice_size]
+    return tensor.tensor_split(world_size, dim=-1)[rank]
 
 
 def slice_bias_horizontal(tensor: torch.Tensor, rank: int, world_size: int) -> torch.Tensor:
     return tensor / world_size
 
 
-def slice_tensors(key_parameter_iterator, tensor_rules: dict, rank: int, world_size: int):
+SLICING_RULES = {
+    ("vertical", "weight"): slice_weight_vertical,
+    ("vertical", "bias"): slice_bias_vertical,
+    ("horizontal", "weight"): slice_weight_horizontal,
+    ("horizontal", "bias"): slice_bias_horizontal,
+}
+
+
+def slice_tensors(
+    key_parameter_iterator: Iterator[Tuple[str, nn.Parameter]], tensor_rules: Dict[Arg, str], rank: int, world_size: int
+):
     regular_rules = [(re.compile(key), value) for key, value in tensor_rules.items()]
 
     with torch.no_grad():
         for name, param in key_parameter_iterator:
             for pattern, rule in regular_rules:
-                if not pattern.search(name) is None:
-                    name_ending = name.split('.')[-1]
-                    match (rule, name_ending):
-                        case ("vertical", "weight"):
-                            param.data = slice_weight_vertical(param.data, rank=rank, world_size=world_size)
-                        case ("vertical", "bias"):
-                            param.data = slice_bias_vertical(param.data, rank=rank, world_size=world_size)
-                        case ("horizontal", "weight"):
-                            param.data = slice_weight_horizontal(param.data, rank=rank, world_size=world_size)
-                        case ("horizontal", "bias"):
-                            param.data = slice_bias_horizontal(param.data, rank=rank, world_size=world_size)
-                        case _:
-                            raise Exception("Fuck you tensor!")
+                if pattern.search(name) is not None:
+                    name_ending = name.split(".")[-1]
+                    param.data = SLICING_RULES[rule, name_ending](param.data, rank=rank, world_size=world_size)
 
 
-def process_input(rules, rank, world_size, *args, **kwargs):
-    args = list(args)
+def process_input(rules: Dict[Arg, str], rank: int, world_size: int, *args, **kwargs):
+    extended_kwargs = dict(kwargs)
+    extended_kwargs.update(enumerate(args))
     for target, action in rules.items():
-        match action.split():
-            case "cut", dim:
-                dim = int(dim)
-                match target:
-                    case int(idx):
-                        slice_size= args[idx].shape[dim] // world_size
-                        args[idx] = args[idx][..., rank * slice_size: (rank + 1) * slice_size, :]
-                    case str(name):
-                        slice_size= kwargs[name].shape[dim] // world_size
-                        kwargs[name] = kwargs[name][rank * slice_size: (rank + 1) * slice_size, ...]
-                    case _:
-                        raise Exception("Fuck you cut input!")
+        if not isinstance(extended_kwargs.get(target), torch.Tensor):
+            continue  # optional parameter is None or False
+        action_type, *maybe_dim = action
+        if action_type == "cut":
+            extended_kwargs[target] = extended_kwargs[target].tensor_split(world_size, dim=maybe_dim)[rank]
+        elif action_type == "scale":
+            extended_kwargs[target] = extended_kwargs[target] / world_size
+        else:
+            raise Exception(f"unexpected action {action_type}")
 
-            case "scale":
-                match target:
-                    case int(idx):
-                        args[idx] = args[idx] / world_size
-                    case str(name):
-                        kwargs[name] = kwargs[name]/ world_size
-                    case _:
-                        raise Exception("Fuck you scale input!")
-            case _:
-                raise Exception("Fuck you input action!")
-
-    return args, kwargs
+    args = [extended_kwargs.pop(i) for i in range(len(args))]
+    return args, extended_kwargs
 
 
-def process_output(output, rules, rank: int):
+def process_output(output, rules: Dict[Arg, Callable[[torch.Tensor, int], torch.Tensor]], rank: int):
+    if isinstance(output, torch.Tensor):
+        return process_output([output], rules, rank)[0]
     for target, action in rules.items():
-        match action:
-            case "reduce":
-                match target:
-                    case "ALL":
-                        output = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output, rank)
-                    case int(idx):
-                        output[idx] = communications.TENSOR_PARALLEL_COMMUNICATOR.all_reduce(output[idx], rank)
-                    case _:
-                        raise Exception("Fuck you reduce taget!")
-            case "gather":
-                match target:
-                    case "ALL":
-                        output = communications.TENSOR_PARALLEL_COMMUNICATOR.all_gather(output, rank)
-                    case int(idx):
-                        output[idx] = communications.TENSOR_PARALLEL_COMMUNICATOR.all_gather(output[idx], rank)
-                    case _:
-                        raise Exception("Fuck you gather taget!")
-            case _:
-                raise Exception("Fuck you output action!")
+        output[target] = action(output[target], rank)
     return output
 
 
-def process_attr(module, rules, rank, world_size):
+def process_attr(module: nn.Module, rules: Dict[Arg, str], rank: int, world_size: int):
     for attr, action in rules.items():
-            match action:
-                case "scale_int":
-                    setattr(module, attr, getattr(module, attr) // world_size)
+        if action == "scale_int":
+            setattr(module, attr, getattr(module, attr) // world_size)
+        else:
+            raise NotImplementedError(action)
 
 
 class ParallelLayerWrapper(nn.Module):
@@ -130,7 +95,6 @@ class ParallelLayerWrapper(nn.Module):
         self.rank = rank
         self.world_size = world_size
 
-        
     def forward(self, *args, **kwargs):
         args, kwargs = process_input(self.input_rules, self.rank, self.world_size, *args, **kwargs)
         output = self.module(*args, **kwargs)
@@ -169,20 +133,30 @@ def get_tensor_parallel_model_slice(model_cls, slicing_config: SlicingConfig, ra
 
         @classmethod
         def _load_pretrained_model(cls, model: model_cls, state_dict, loaded_keys, *args, **kwargs):
-            slice_tensors(state_dict.items(), _TensorParallelSlice.slicing_config.tensor_rules, _TensorParallelSlice.rank, _TensorParallelSlice.world_size)
+            slice_tensors(
+                state_dict.items(),
+                _TensorParallelSlice.slicing_config.tensor_rules,
+                _TensorParallelSlice.rank,
+                _TensorParallelSlice.world_size,
+            )
             result = super()._load_pretrained_model(model, state_dict, loaded_keys, *args, **kwargs)
-            
-            wrap_submodules(model, _TensorParallelSlice.slicing_config.module_rules, _TensorParallelSlice.rank, _TensorParallelSlice.world_size)
+
+            wrap_submodules(
+                model,
+                _TensorParallelSlice.slicing_config.module_rules,
+                _TensorParallelSlice.rank,
+                _TensorParallelSlice.world_size,
+            )
 
             return result
-        
+
     return _TensorParallelSlice
 
 
 class MultithreadedModule(PreTrainedModel):
     def __init__(self, slice_types, devices) -> None:
-        super().__init__(PretrainedConfig()) # Temporary empty config. Gets replaced in from_pretrained
-        assert(len(slice_types) == len(devices))
+        super().__init__(PretrainedConfig())  # Temporary empty config. Gets replaced in from_pretrained
+        assert len(slice_types) == len(devices)
         self.slice_types = slice_types
         self.slices = torch.nn.ModuleList()
         self.devices = devices
@@ -207,7 +181,9 @@ class MultithreadedModule(PreTrainedModel):
         return parallel_apply(self.slices, inputs, kwargs_tup=kwargs_tup)[0]
 
     def from_pretrained(self, *args, **kwargs):
-        self.slices = torch.nn.ModuleList([slice_type.from_pretrained(*args, **kwargs) for slice_type in self.slice_types])
+        self.slices = torch.nn.ModuleList(
+            [slice_type.from_pretrained(*args, **kwargs) for slice_type in self.slice_types]
+        )
         self.config = self.slices[0].config
         return self.scatter()
 
