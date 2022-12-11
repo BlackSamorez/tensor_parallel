@@ -1,5 +1,5 @@
 import re
-from typing import Callable, Dict, Iterator, Sequence, Tuple, Union
+from typing import Callable, Dict, Iterator, Tuple, Union
 
 import torch
 import torch.nn as nn
