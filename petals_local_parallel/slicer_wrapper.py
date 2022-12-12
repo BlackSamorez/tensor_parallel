@@ -3,9 +3,9 @@ from typing import Callable, Dict, Iterator, Tuple, Union
 
 import torch
 import torch.nn as nn
-from autoconfig import build_default_slicing_config
-from all_to_all_communication_primitives import AllReduce, AllGather
-from slicing_config import SlicingConfig
+from .autoconfig import build_default_slicing_config
+from .all_to_all_communication_primitives import AllReduce, AllGather
+from .slicing_config import SlicingConfig
 from torch.nn.parallel import parallel_apply
 from transformers import PreTrainedModel, PretrainedConfig
 

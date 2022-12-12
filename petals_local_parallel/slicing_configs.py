@@ -1,4 +1,4 @@
-from slicer_wrapper import SlicingConfig
+from .slicer_wrapper import SlicingConfig
 
 SLICING_CONFIGS = {
 "BloomModel": SlicingConfig(

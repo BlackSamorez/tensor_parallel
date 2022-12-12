@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from slicing_config import SlicingConfig
+from .slicing_config import SlicingConfig
 
 def build_default_slicing_config(model: nn.Module) -> SlicingConfig:
     slicing_config = SlicingConfig({}, {})
