@@ -27,3 +27,5 @@
 #           python setup.py sdist
 
 #           twine upload dist/*
+
+#           ***some stuff with encrypted secrects***
