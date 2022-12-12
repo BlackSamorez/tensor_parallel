@@ -1,1 +1,1 @@
-from slicer_wrapper_interface import SlicingConfig, tensor_parallel
+# from slicer_wrapper_interface import SlicingConfig, tensor_parallel
