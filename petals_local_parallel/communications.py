@@ -5,7 +5,7 @@ import torch
 from torch import Tensor
 import torch.distributed as dist
 
-from all_to_all_communication_primitives import AllReduce, AllGather
+from .all_to_all_communication_primitives import AllReduce, AllGather
 
 class Communicator(ABC):
     @abstractmethod

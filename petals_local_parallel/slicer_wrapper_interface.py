@@ -1,7 +1,7 @@
-from slicing_config import SlicingConfig
-from slicer_wrapper import get_tensor_parallel_model_slice, MultithreadedModule
-from slicing_configs import SLICING_CONFIGS
-import communications
+from .slicing_config import SlicingConfig
+from .slicer_wrapper import get_tensor_parallel_model_slice, MultithreadedModule
+from .slicing_configs import SLICING_CONFIGS
+from . import communications
 
 import torch
 import torch.distributed as dist
