@@ -1,3 +1,6 @@
+"""
+The main TensorParallel module wrapper
+"""
 import logging
 import threading
 from contextlib import nullcontext
