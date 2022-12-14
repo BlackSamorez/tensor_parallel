@@ -23,7 +23,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ~/.cache/pip
-          key: Key-v1-${{ matrix.python-version }}-${{ hashFiles('config.cfg') }}
+          key: Key-v1-${{ matrix.python-version }}-${{ hashFiles('setup.cfg') }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
