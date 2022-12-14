@@ -2,7 +2,7 @@ name: "Run tests"
 
 on:
   push:
-    branch: [ add_CI_tests ]
+    branch: [ main ]
 
 jobs:
   build:
