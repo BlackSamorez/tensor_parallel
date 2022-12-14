@@ -2,6 +2,7 @@
 The main TensorParallel module wrapper
 """
 import logging
+import os
 import threading
 from contextlib import nullcontext
 from typing import Any, Optional, Sequence
@@ -19,6 +20,7 @@ from tensor_parallel.utils import nested_flatten, nested_pack
 
 use_log_handler("in_root_logger")
 logger = get_logger(__file__)
+TENSOR_PARALLEL_USE_NATIVE = bool(os.environ.get("TENSOR_PARALLEL_USE_NATIVE"))
 
 
 class TensorParallel(nn.Module):
@@ -89,7 +91,7 @@ class TensorParallel(nn.Module):
         for idx in range(len(self.module_shards)):
             args_and_kwargs_replicated[idx] = nested_pack(args_and_kwargs_replicated[idx], args_and_kwargs)
         inputs, kwargs_tup = zip(*args_and_kwargs_replicated)
-        if self.all_cuda:
+        if self.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
             return parallel_apply(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
         else:
             return parallel_apply_simple(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
