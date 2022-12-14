@@ -1,6 +1,15 @@
 # petals_local_parallel
 YSDA project
 
+```python
+import torch, torch.nn as nn
+model = nn.Sequential(nn.Embedding(1337, 64), nn.LayerNorm(64), nn.ReLU(), nn.Linear(128, 10))
+
+from tensor_parallel import TensorParallel
+model = TensorParallel(model, device_ids=['cuda:0', 'cuda:1'])
+
+normal_outputs = model(**normal_inputs)  # forward and backward works just like in the base model
+```
 
 ## Benchmarking tutorial
 
