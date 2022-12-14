@@ -1,5 +1,6 @@
-import torch
 import threading
+
+import torch
 
 
 class AllReduce:

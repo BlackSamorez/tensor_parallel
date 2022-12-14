@@ -7,6 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.black]
 line-length = 120
+force-exclude = "petals_local_parallel"
 required-version = "22.3.0"
 
 [tool.isort]

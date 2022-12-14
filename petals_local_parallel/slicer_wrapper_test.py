@@ -1,19 +1,20 @@
-import torch
 import os
 
-from transformers.models.bloom.modeling_bloom import BloomModel
+import torch
 from transformers.models.bert.modeling_bert import BertModel
+from transformers.models.bloom.modeling_bloom import BloomModel
 from transformers.models.t5.modeling_t5 import T5Model
+
 NAME = "bigscience/bloom-560m" # "t5-small" # "bert-base-uncased"
 MODEL_CLS = BloomModel
 
 from transformers import logging
+
 logging.set_verbosity_error()
 
 
-from slicer_wrapper_interface import tensor_parallel
-
 import torch.distributed as dist
+from slicer_wrapper_interface import tensor_parallel
 
 BACKEND = 'nccl' if torch.cuda.is_available() else 'gloo'
 torch.set_num_threads(1)

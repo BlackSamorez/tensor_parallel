@@ -1,16 +1,18 @@
 import torch
-
-from transformers.models.bloom.modeling_bloom import BloomModel
 from transformers.models.bert.modeling_bert import BertModel
+from transformers.models.bloom.modeling_bloom import BloomModel
 from transformers.models.t5.modeling_t5 import T5Model
+
 NAME = "bigscience/bloom-560m" # "t5-small" # "bert-base-uncased"
 MODEL_CLS = BloomModel
 
 from transformers import logging
+
 logging.set_verbosity_error()
 
 
 from slicer_wrapper_interface import tensor_parallel
+
 
 def converter_main():
     test_input = torch.tensor([[1, 2, 3, 4, 5]])

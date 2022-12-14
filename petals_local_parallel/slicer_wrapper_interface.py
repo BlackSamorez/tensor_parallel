@@ -1,9 +1,8 @@
-from slicer_wrapper import SlicingConfig, get_tensor_parallel_model_slice, MultithreadedModule
-from slicing_configs import SLICING_CONFIGS
 import communications
-
 import torch
 import torch.distributed as dist
+from slicer_wrapper import MultithreadedModule, SlicingConfig, get_tensor_parallel_model_slice
+from slicing_configs import SLICING_CONFIGS
 
 
 def tensor_parallel(model_cls, devices, slicing_config: SlicingConfig = None):
