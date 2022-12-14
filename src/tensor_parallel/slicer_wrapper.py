@@ -5,6 +5,7 @@ Tensor parallelism config and functions for splitting model into shards
 from __future__ import annotations
 
 import dataclasses
+import logging
 import os
 import re
 from copy import deepcopy
@@ -18,7 +19,6 @@ from torch.nn.modules import conv
 
 import tensor_parallel.cross_device_ops as cross_device_ops
 from tensor_parallel.communications import AllGather, AllReduce, NCCLAllGather, NCCLAllReduce
-from tensor_parallel.logging import get_logger, use_log_handler
 
 Arg = Union[int, str]
 Pattern = Union[str, re.Pattern]
@@ -26,8 +26,7 @@ Action = Union[str, Callable]  # actions describe what to do with tensors
 StateRules = Dict[Pattern, Action]  # state rules are pattern-matched actions on module state dict
 ModuleRules = Dict[Pattern, Dict[Arg, Action]]  # module rules are pattern-matched actions on inputs/outputs/attrs
 
-use_log_handler("in_root_logger")
-logger = get_logger(__file__)
+logger = logging.getLogger(__file__)
 
 
 @dataclasses.dataclass

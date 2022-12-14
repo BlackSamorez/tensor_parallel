@@ -14,12 +14,10 @@ from torch.cuda.amp import autocast
 from torch.nn.parallel import parallel_apply
 
 from tensor_parallel.cross_device_ops import broadcast_coalesced
-from tensor_parallel.logging import get_logger, use_log_handler
 from tensor_parallel.slicer_wrapper import Config
 from tensor_parallel.utils import nested_flatten, nested_pack
 
-use_log_handler("in_root_logger")
-logger = get_logger(__file__)
+logger = logging.getLogger(__file__)
 TENSOR_PARALLEL_USE_NATIVE = bool(os.environ.get("TENSOR_PARALLEL_USE_NATIVE"))
 
 
