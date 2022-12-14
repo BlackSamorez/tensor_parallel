@@ -21,6 +21,9 @@ jobs:
           
       - name: install python packages
         run: |
+          pwd
+          ls
+          echo 123
           python -m pip install --upgrade pip
           pip install -r ./petals_local_parallel/requirements.txt
           
