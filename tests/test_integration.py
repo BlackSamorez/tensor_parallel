@@ -20,11 +20,11 @@ def test_tp_bloom_block(devices, custom_config):
     if custom_config:
         tp_config = Config(
             state_rules={
-                r".*self_attention\.query_key_value\.(weight|bias)": "split 0",
-                r".*self_attention\.dense\.(weight|bias)": "split 0",
-                r".*mlp\.dense_h_to_4h\.(weight|bias)": "split 0",
-                r".*mlp\.dense_4h_to_h\.weight": "split 1",
-                r".*mlp\.dense_4h_to_h\.bias": "scale",
+                ".*self_attention\.query_key_value\.(weight|bias)": "split 0",
+                ".*self_attention\.dense\.(weight|bias)": "split 0",
+                ".*mlp\.dense_h_to_4h\.(weight|bias)": "split 0",
+                ".*mlp\.dense_4h_to_h\.weight": "split 1",
+                ".*mlp\.dense_4h_to_h\.bias": "scale",
             },
             input_rules={},
             output_rules={
