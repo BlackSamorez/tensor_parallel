@@ -28,6 +28,7 @@ class TensorParallel(nn.Module):
         device_ids: Optional[Sequence[torch.device]] = None,
         output_device: Optional[torch.device] = None,
         config: Optional[Config] = None,
+        output_all: bool = False,
     ):
         super().__init__()
         original_params = sum(p.numel() for p in module.parameters())
@@ -37,12 +38,18 @@ class TensorParallel(nn.Module):
         if device_ids is None or len(device_ids) <= 1:
             self.module_shards.append(module)
             self.device_ids = []
+            self.output_device_index = 0 if not output_all else slice(None)
             return
 
         self.devices = tuple(torch.device(d) for d in device_ids)
         self.all_cuda = all(device.type == "cuda" for device in self.devices)
         self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
-        self.output_device_index = self.devices.index(output_device) if output_device is not None else 0
+        if output_all:
+            assert output_device is None, "output_device is ignored if output_all is set to True"
+            self.output_device_index = slice(None)
+        elif output_device.type == 'cuda' and output_device.index is None:
+            output_device = torch.device(output_device.type, index=0)
+            self.output_device_index = self.devices.index(output_device) if output_device is not None else 0
         world_size = len(self.devices)
 
         if config is None:
@@ -72,7 +79,7 @@ class TensorParallel(nn.Module):
 
     def forward(self, *args, **kwargs):
         if len(self.module_shards) <= 1:
-            return self.module_shards[0](*args, **kwargs)
+            return [self.module_shards[0](*args, **kwargs)][self.output_device_index]
         args_and_kwargs = (args, kwargs)
         flat_tensors = [obj for obj in nested_flatten(args_and_kwargs) if isinstance(obj, torch.Tensor)]
         flat_tensors_replicated = broadcast_coalesced(flat_tensors, self.devices, all_cuda=self.all_cuda)
