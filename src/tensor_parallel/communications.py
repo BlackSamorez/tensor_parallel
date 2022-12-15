@@ -42,7 +42,7 @@ class CollectiveOperation(CollectiveOpetationBase):
                 except Exception as e:
                     for i in range(self.world_size):
                         self.rank_outputs[i] = (None, e)
-            self.barrier.wait(5)
+            self.barrier.wait()
             result, exception = self.rank_outputs[rank]
             if exception:
                 raise exception
@@ -58,16 +58,45 @@ class NCCLAllReduce(CollectiveOperation):
 
 class NCCLAllGather(CollectiveOperation):
     def __init__(self, world_size: int, dim: int):
-        super().__init__(world_size, func=self._nccl_allgather)
+        super().__init__(world_size, func=cross_device_ops.NCCLAllGatherFunction.apply)
+        self.tensor_lengths = [None for _ in range(world_size)]
         self.dim = dim
 
-    def _nccl_allgather(self, *tensors: torch.Tensor):
-        gathered_tensors = cross_device_ops.NCCLAllGatherFunction.apply(*tensors)
-        dim_indices = list(range(1, gathered_tensors[0].ndim))
-        dim_indices.insert(self.dim, 0)
-        concatenated_shape = list(tensors[0].shape)
-        concatenated_shape[self.dim] = -1
-        return tuple(output.permute(dim_indices).reshape(concatenated_shape) for output in gathered_tensors)
+    def __call__(self, x: torch.Tensor, rank: int):
+        # note: all-gather deliberately makes all device-local computations on their ranks, because failing to do so
+        # (making one of the ranks operate on other's tensors) may deadlock cuda streams in parallel_apply;
+        # if you modify this code and need cross-rank computations, use parallel_apply_simple to avoid stream deadlocks
+        try:
+            gather_dim = self.dim % x.ndim
+            self.tensor_lengths[rank] = x.shape[gather_dim]
+            self.barrier.wait()
+            tensor_lengths = tuple(self.tensor_lengths)
+            max_length = max(tensor_lengths)
+            if x.shape[gather_dim] < max_length:
+                pad = [0] * (x.ndim * 2)
+                pad[2 * (x.ndim - gather_dim - 1) + 1] = max_length - x.shape[gather_dim]
+                # to understand the weird indexing (2 * (ndim - dim) ...), see F.pad documentation
+                x = torch.nn.functional.pad(x, pad)
+            gathered_tensor = super().__call__(x, rank=rank)
+            used_padding = any(length != max_length for length in tensor_lengths)
+
+            if not used_padding:
+                dim_indices = list(range(1, gathered_tensor.ndim))
+                dim_indices.insert(gather_dim, 0)
+                concatenated_shape = list(tensors[0].shape)
+                concatenated_shape[gather_dim] = -1
+                return output.permute(dim_indices).reshape(concatenated_shape)
+            else:
+                # restore original tensor lengths by slicing off padding
+                gathered_tensor_parts = []
+                for i, tensor_length in enumerate(tensor_lengths):
+                    slices_i = [slice(None) for _ in range(gathered_tensor.ndim)]
+                    slices_i[0] = i  # select i-th element from gathered tensors
+                    slices_i[gather_dim + 1] = slice(0, tensor_length)  # remove padding
+                    gathered_tensor_parts.append(gathered_tensor[slices_i])
+                return torch.cat(gathered_tensor_parts, dim=self.dim)
+        finally:
+            self.tensor_lengths[rank] = None
 
 
 class AllReduce(CollectiveOpetationBase):

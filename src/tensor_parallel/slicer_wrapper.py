@@ -29,6 +29,9 @@ ModuleRules = Dict[Pattern, Dict[Arg, Action]]  # module rules are pattern-match
 logger = logging.getLogger(__file__)
 
 
+TENSOR_PARALLEL_USE_NATIVE = bool(os.environ.get("TENSOR_PARALLEL_USE_NATIVE"))
+
+
 @dataclasses.dataclass
 class Config:
     state_rules: StateRules
@@ -48,27 +51,38 @@ class Config:
     def get_default_config(cls, module: nn.Module) -> Config:
         """Make a generic config that wraps individual linear, embedding and convolutional layers"""
         config = cls({}, {}, {}, {})
+        emb_weights = {m.weight for m in module.modules() if isinstance(m, (nn.Embedding, nn.EmbeddingBag))}
+
         for name, module in module.named_modules():
-            if isinstance(module, nn.Linear):
-                assert module.weight.shape == (module.out_features, module.in_features)
-                assert module.bias is None or module.bias.shape == (module.out_features,)
-                config.state_rules[name + ".(weight|bias)"] = "split 0"
-                config.output_rules[name] = {0: "gather -1"}
-            elif isinstance(module, (nn.Embedding, nn.EmbeddingBag)):
+            if isinstance(module, (nn.Embedding, nn.EmbeddingBag)):
                 assert module.max_norm is None or module.norm_type < 2
                 assert getattr(module, "bias", None) is None or module.bias.shape == module.embedding_dim
-                config.state_rules[name + ".weight"] = "split 1"
-                config.state_rules[name + ".bias"] = "split 0"
-                config.output_rules[name] = {0: "gather -1"}
+                config.state_rules[f"^{name}.weight$"] = "split 1"
+                if hasattr(module, "bias"):
+                    config.state_rules[f"^{name}.bias$"] = "split 0"
+                config.output_rules[f"^{name}$"] = {0: "gather -1"}
+            elif isinstance(module, nn.Linear):
+                assert module.weight.shape == (module.out_features, module.in_features)
+                assert module.bias is None or module.bias.shape == (module.out_features,)
+                if module.weight not in emb_weights:  # regular linear layer
+                    config.state_rules[f"^{name}.(weight|bias)$"] = "split 0"
+                    config.output_rules[f"^{name}$"] = {0: "gather -1"}
+                else:
+                    # linear weight tied with embeddings; this is a popular special case for language models;
+                    # since embedding weight will be sliced over dim 1, we should adapt to the input-sliced weight
+                    config.input_rules[f"^{name}$"] = {0: "split -1"}
+                    config.output_rules[f"^{name}$"] = {0: "sum"}
+                    if module.bias is not None:
+                        config.state_rules[f"^{name}.bias$"] = "scale"
             elif isinstance(module, conv._ConvNd) and module.groups == 1:
                 shape = [module.out_channels, module.in_channels] + list(module.kernel_size)
                 shape[:2] = shape[:2][::-1] if module.transposed else shape[:2]
                 shape = tuple(shape)
                 assert module.weight.shape == shape, f"{module.weight.shape} != {shape}"
                 assert module.bias is None or module.bias.shape == (module.out_channels,), module.bias.shape
-                config.state_rules[name + ".weight"] = "split 1" if module.transposed else "split 0"
-                config.state_rules[name + ".bias"] = "split 0"
-                config.output_rules[name] = {0: "gather 1"}
+                config.state_rules[f"^{name}.weight$"] = "split 1" if module.transposed else "split 0"
+                config.state_rules[f"^{name}.bias$"] = "split 0"
+                config.output_rules[f"^{name}$"] = {0: "gather 1"}
             elif isinstance(module, conv._ConvNd) and module.groups != 1:
                 logger.warning(
                     f"AutoConfig does not support sharding convolution layers {name} with {module.groups} groups yet; "
@@ -116,7 +130,7 @@ class Config:
                 if child in unique_wrappers:
                     setattr(parent, child_name, unique_wrappers[child])
 
-        return shard
+        return unique_wrappers.get(shard, shard)  # wrap the root module if needed
 
     def _maybe_wrap_submodule(self, name: str, module: nn.Module, *, rank: int, world_size: int) -> nn.Module:
         """
@@ -128,8 +142,9 @@ class Config:
         attr_actions = find_matching_actions("attr", name, self.attr_rules)
         input_actions = find_matching_actions("input", name, self.input_rules)
         output_actions = find_matching_actions("output", name, self.output_rules)
-        if input_actions or output_actions:
+        if attr_actions:
             process_attrs_(module, attr_actions, rank=rank, world_size=world_size)
+        if input_actions or output_actions:
             module = _TensorParallelWrapper(module, input_actions, output_actions, rank=rank, world_size=world_size)
         return module
 
@@ -175,7 +190,7 @@ def create_collective_ops(rules: dict, devices: Sequence[torch.device]):
     all_cuda = all(device.type == "cuda" for device in devices)
     unique_output_transforms = {op for output_actions in rules.values() for op in output_actions.values()}
     transform_map = {}
-    if all_cuda and not os.environ.get("TENSOR_PARALLEL_USE_NATIVE"):
+    if all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
         make_allreduce, make_allgather = NCCLAllReduce, NCCLAllGather
     else:
         make_allreduce = partial(
@@ -221,7 +236,7 @@ def process_state_(module: nn.Module, config: Config, *, rank: int, world_size: 
                 unused_patterns.discard(pattern)
 
     if unused_patterns:
-        logger.warning(f"The following patterns in state_rules were unused: {sorted(unused_patterns)}")
+        logger.warning(f"The following patterns in state_rules were unused: {[str(p) for p in unused_patterns]}")
 
 
 def process_attrs_(module: nn.Module, actions: Dict[Arg, str], rank: int, world_size: int):
@@ -236,9 +251,7 @@ def process_input(input_actions: Dict[Arg, str], rank: int, world_size: int, *ar
     extended_kwargs = dict(kwargs)
     extended_kwargs.update(enumerate(args))
     for target, action in input_actions.items():
-        if not isinstance(extended_kwargs[target], torch.Tensor):
-            continue  # optional parameter is None or False
-        extended_kwargs[target] = apply_action(extended_kwargs[target], action, rank=rank, world_size=world_size)
+        extended_kwargs[target] = apply_action(extended_kwargs.get(target), action, rank=rank, world_size=world_size)
     args = [extended_kwargs.pop(i) for i in range(len(args))]
     return args, extended_kwargs
 
@@ -247,9 +260,12 @@ def process_output(
     output, output_actions: Dict[Arg, Callable[[torch.Tensor, int], torch.Tensor]], *, rank: int, world_size: int
 ):
     if isinstance(output, torch.Tensor):
-        return process_output([output], output_actions, rank=rank, world_size=world_size)[0]
+        return process_output({0: output}, output_actions, rank=rank, world_size=world_size)[0]
+    if isinstance(output, Sequence):
+        output_dict = process_output(dict(enumerate(output)), output_actions, rank=rank, world_size=world_size)
+        return type(output)((output_dict[i] for i in range(len(output))))
     for target, action in output_actions.items():
-        output[target] = apply_action(output[target], action, rank=rank, world_size=world_size)
+        output[target] = apply_action(output.get(target), action, rank=rank, world_size=world_size)
     return output
 
 
