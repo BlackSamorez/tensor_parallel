@@ -10,7 +10,7 @@ from tensor_parallel.slicing_configs import get_bloom_config
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 def test_bloom_inference(use_config, devices, model_name="bigscience/bloom-560m"):
     model_config = transformers.AutoConfig.from_pretrained(model_name)
-    model = transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).to(devices[0])
+    model = transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 
     inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
     inp2 = torch.randint(1, 1000, size=(2, 1), device=devices[0])
