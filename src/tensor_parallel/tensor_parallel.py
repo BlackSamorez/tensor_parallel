@@ -5,7 +5,7 @@ import logging
 import os
 import threading
 from contextlib import nullcontext
-from typing import Any, Optional, Sequence
+from typing import Any, Optional, Sequence, Union
 
 import torch
 from torch import nn
@@ -55,7 +55,7 @@ class TensorParallel(nn.Module):
         if output_all:
             assert output_device is None, "output_device is ignored if output_all is set to True"
             self.output_device_index = slice(None)
-        elif output_device.type == 'cuda' and output_device.index is None:
+        elif output_device.type == "cuda" and output_device.index is None:
             output_device = torch.device(output_device.type, index=0)
             self.output_device_index = self.devices.index(output_device) if output_device is not None else 0
         world_size = len(self.devices)
@@ -177,8 +177,9 @@ def get_a_var(obj):
                 return result
     return None
 
+
 def canonicalize_device(device: Union[torch.device, str]) -> torch.device:
     device = torch.device(device)
-    if device.type == 'cuda' and device.index is None:
+    if device.type == "cuda" and device.index is None:
         device = torch.device(device, index=0)
     return device
