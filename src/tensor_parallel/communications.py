@@ -62,16 +62,17 @@ class NCCLAllGather(CollectiveOperation):
         self.dim = dim
 
     def _nccl_allgather(self, *tensors: torch.Tensor):
-        tensor_lengths = tuple(x.shape[self.dim] for x in tensors)
-        needs_padding = len(set(tensor_lengths)) != 1
         ndim = tensors[0].ndim
+        gather_dim = self.dim % tensors[0].ndim
+        tensor_lengths = tuple(x.shape[gather_dim] for x in tensors)
+        needs_padding = len(set(tensor_lengths)) != 1
         if needs_padding:
             tensors = list(tensors)
             max_length = max(tensor_lengths)
             pad = [0] * (ndim * 2)
             for i in range(len(tensors)):
                 if tensor_lengths[i] < max_length:
-                    pad[2 * (ndim - self.dim - 1) + 1] = max_length - tensor_lengths[i]
+                    pad[2 * (ndim - gather_dim - 1) + 1] = max_length - tensor_lengths[i]
                     # to understand the index [2 * ndim - dim ...], see F.pad documentation
                     tensors[i] = torch.nn.functional.pad(tensors[i], pad)
 
@@ -79,9 +80,9 @@ class NCCLAllGather(CollectiveOperation):
 
         if not needs_padding:
             dim_indices = list(range(1, gathered_tensors[0].ndim))
-            dim_indices.insert(self.dim, 0)
+            dim_indices.insert(gather_dim, 0)
             concatenated_shape = list(tensors[0].shape)
-            concatenated_shape[self.dim] = -1
+            concatenated_shape[gather_dim] = -1
             return tuple(output.permute(dim_indices).reshape(concatenated_shape) for output in gathered_tensors)
         else:
             # restore original tensor lengths by slicing off padding
@@ -89,7 +90,7 @@ class NCCLAllGather(CollectiveOperation):
             for i, tensor_length in enumerate(tensor_lengths):
                 slices_i = [slice(None) for _ in range(ndim + 1)]
                 slices_i[0] = i  # select i-th element from gathered tensors
-                slices_i[self.dim + 1] = slice(0, tensor_length)
+                slices_i[gather_dim + 1] = slice(0, tensor_length)
                 gathered_tensor_slices.append(tuple(slices_i))
 
             gathered_tensors = tuple(
