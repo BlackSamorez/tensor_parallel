@@ -44,17 +44,16 @@ class TensorParallel(nn.Module):
             del output_device
 
         self.module_shards = nn.ModuleList()
-        if device_ids is None or len(device_ids) <= 1:
-            self.module_shards.append(module)
-            self.device_ids = []
-            self.output_device_index = 0
-            return
 
         self.devices = device_ids
         self.output_device_index = output_device_index
         self.all_cuda = all(device.type == "cuda" for device in self.devices)
         self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
         world_size = len(self.devices)
+
+        if len(device_ids) <= 1:
+            self.module_shards.append(module)
+            return
 
         if config is None:
             config = Config.get_default_config(module)
