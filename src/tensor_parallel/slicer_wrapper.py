@@ -58,7 +58,8 @@ class Config:
                 assert module.max_norm is None or module.norm_type < 2
                 assert getattr(module, "bias", None) is None or module.bias.shape == module.embedding_dim
                 config.state_rules[name + ".weight"] = "split 1"
-                config.state_rules[name + ".bias"] = "split 0"
+                if hasattr(module, "bias"):
+                    config.state_rules[name + ".bias"] = "split 0"
                 config.output_rules[name] = {0: "gather -1"}
             elif isinstance(module, conv._ConvNd) and module.groups == 1:
                 shape = [module.out_channels, module.in_channels] + list(module.kernel_size)
