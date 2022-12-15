@@ -78,7 +78,7 @@ class TensorParallel(nn.Module):
         logger.log(
             log_level,
             f"Inefficiency warning: model has {original_params} params but shards have {params_per_shard} params. "
-            f"This means that each GPU uses {inefficiency_rate * 100:.3f}% extra memory for parameters",
+            f"This means that each device uses {inefficiency_rate * 100:.3f}% extra memory for parameters",
         )
 
     def forward(self, *args, **kwargs):

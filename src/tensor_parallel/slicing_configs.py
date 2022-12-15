@@ -1,5 +1,9 @@
 """
-Optimized configs for selected models
+Optimized configs for selected models. These configs are not necessary, but they can improve performance in some
+cases, e.g. training with very small batches or inference with long sequences.
+
+NB: some of these configs get fairly complicated in order to squeeze a bit of extra performance. When developing your
+  own config, you can get most of the performance benefits by using auto config -- and maybe splitting MLP layers.
 """
 
 from transformers import BloomConfig

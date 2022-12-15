@@ -42,7 +42,7 @@ class CollectiveOperation(CollectiveOpetationBase):
                 except Exception as e:
                     for i in range(self.world_size):
                         self.rank_outputs[i] = (None, e)
-            self.barrier.wait(5)
+            self.barrier.wait()
             result, exception = self.rank_outputs[rank]
             if exception:
                 raise exception

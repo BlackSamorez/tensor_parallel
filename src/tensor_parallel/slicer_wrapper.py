@@ -225,7 +225,7 @@ def process_state_(module: nn.Module, config: Config, *, rank: int, world_size: 
                 unused_patterns.discard(pattern)
 
     if unused_patterns:
-        logger.warning(f"The following patterns in state_rules were unused: {sorted(unused_patterns)}")
+        logger.warning(f"The following patterns in state_rules were unused: {[str(p) for p in unused_patterns]}")
 
 
 def process_attrs_(module: nn.Module, actions: Dict[Arg, str], rank: int, world_size: int):
