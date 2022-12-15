@@ -52,24 +52,24 @@ class Config:
             if isinstance(module, nn.Linear):
                 assert module.weight.shape == (module.out_features, module.in_features)
                 assert module.bias is None or module.bias.shape == (module.out_features,)
-                config.state_rules[name + ".(weight|bias)"] = "split 0"
-                config.output_rules[name] = {0: "gather -1"}
+                config.state_rules[f"^{name}.(weight|bias)$"] = "split 0"
+                config.output_rules[f"^{name}$"] = {0: "gather -1"}
             elif isinstance(module, (nn.Embedding, nn.EmbeddingBag)):
                 assert module.max_norm is None or module.norm_type < 2
                 assert getattr(module, "bias", None) is None or module.bias.shape == module.embedding_dim
-                config.state_rules[name + ".weight"] = "split 1"
+                config.state_rules[f"^{name}.weight$"] = "split 1"
                 if hasattr(module, "bias"):
-                    config.state_rules[name + ".bias"] = "split 0"
-                config.output_rules[name] = {0: "gather -1"}
+                    config.state_rules[f"^{name}.bias$"] = "split 0"
+                config.output_rules[f"^{name}$"] = {0: "gather -1"}
             elif isinstance(module, conv._ConvNd) and module.groups == 1:
                 shape = [module.out_channels, module.in_channels] + list(module.kernel_size)
                 shape[:2] = shape[:2][::-1] if module.transposed else shape[:2]
                 shape = tuple(shape)
                 assert module.weight.shape == shape, f"{module.weight.shape} != {shape}"
                 assert module.bias is None or module.bias.shape == (module.out_channels,), module.bias.shape
-                config.state_rules[name + ".weight"] = "split 1" if module.transposed else "split 0"
-                config.state_rules[name + ".bias"] = "split 0"
-                config.output_rules[name] = {0: "gather 1"}
+                config.state_rules[f"^{name}.weight$"] = "split 1" if module.transposed else "split 0"
+                config.state_rules[f"^{name}.bias$"] = "split 0"
+                config.output_rules[f"^{name}$"] = {0: "gather 1"}
             elif isinstance(module, conv._ConvNd) and module.groups != 1:
                 logger.warning(
                     f"AutoConfig does not support sharding convolution layers {name} with {module.groups} groups yet; "
