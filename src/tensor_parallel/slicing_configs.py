@@ -8,6 +8,7 @@ NB: some of these configs get fairly complicated in order to squeeze a bit of ex
 
 from transformers import BloomConfig
 
+
 def split_heads(tensor: torch.Tensor, *, dim: int, head_dim: int, rank: int, world_size: int):
     """Split a tensor along dim such that each part size is divisible by head_dim"""
     if dim < 0:

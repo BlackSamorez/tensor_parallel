@@ -31,6 +31,7 @@ logger = logging.getLogger(__file__)
 
 TENSOR_PARALLEL_USE_NATIVE = bool(os.environ.get("TENSOR_PARALLEL_USE_NATIVE"))
 
+
 @dataclasses.dataclass
 class Config:
     state_rules: StateRules

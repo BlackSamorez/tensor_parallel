@@ -14,7 +14,7 @@ from torch.cuda.amp import autocast
 from torch.nn.parallel import parallel_apply
 
 from tensor_parallel.cross_device_ops import broadcast_coalesced
-from tensor_parallel.slicer_wrapper import Config, TENSOR_PARALLEL_USE_NATIVE
+from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE, Config
 from tensor_parallel.utils import nested_flatten, nested_pack
 
 logger = logging.getLogger(__file__)
