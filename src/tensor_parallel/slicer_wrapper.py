@@ -249,9 +249,12 @@ def process_output(
     output, output_actions: Dict[Arg, Callable[[torch.Tensor, int], torch.Tensor]], *, rank: int, world_size: int
 ):
     if isinstance(output, torch.Tensor):
-        return process_output([output], output_actions, rank=rank, world_size=world_size)[0]
+        return process_output({0: output}, output_actions, rank=rank, world_size=world_size)[0]
+    if isinstance(output, Sequence):
+        output_dict = process_output(dict(enumerate(output)), output_actions, rank=rank, world_size=world_size)
+        return type(output)((output_dict[i] for i in range(len(output))))
     for target, action in output_actions.items():
-        output[target] = apply_action(output[target], action, rank=rank, world_size=world_size)
+        output[target] = apply_action(output.get(target), action, rank=rank, world_size=world_size)
     return output
 
 
