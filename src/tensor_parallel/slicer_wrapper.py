@@ -116,7 +116,7 @@ class Config:
                 if child in unique_wrappers:
                     setattr(parent, child_name, unique_wrappers[child])
 
-        return shard
+        return unique_wrappers.get(shard, shard)  # wrap the root module if needed
 
     def _maybe_wrap_submodule(self, name: str, module: nn.Module, *, rank: int, world_size: int) -> nn.Module:
         """
