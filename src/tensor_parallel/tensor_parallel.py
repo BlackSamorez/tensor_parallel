@@ -27,21 +27,29 @@ class TensorParallel(nn.Module):
         module: nn.Module,
         device_ids: Optional[Sequence[torch.device]] = None,
         output_device: Optional[torch.device] = None,
+        output_device_index: Optional[int] = None,
         config: Optional[Config] = None,
-        output_all: bool = False,
     ):
         super().__init__()
         original_params = sum(p.numel() for p in module.parameters())
+        assert output_device is None or output_device_index is None, "please specify either device or index, not both"
+        device_ids = tuple(map(canonicalize_device, device_ids))
+        if output_device is not None:
+            output_device = canonicalize_device(output_device)
+            assert output_device in device_ids, f"Output device {output_device} not in {device_ids}"
+            output_device_index = device_ids.index(output_device)
+            del output_device
+
         self.module_shards = nn.ModuleList()
         if device_ids is None:
             device_ids = _get_all_device_indices()
         if device_ids is None or len(device_ids) <= 1:
             self.module_shards.append(module)
             self.device_ids = []
-            self.output_device_index = 0 if not output_all else slice(None)
+            self.output_device_index = 0
             return
 
-        self.devices = tuple(torch.device(d) for d in device_ids)
+        self.devices = device_ids
         self.all_cuda = all(device.type == "cuda" for device in self.devices)
         self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
         if output_all:
@@ -168,3 +176,9 @@ def get_a_var(obj):
             if isinstance(result, torch.Tensor):
                 return result
     return None
+
+def canonicalize_device(device: Union[torch.device, str]) -> torch.device:
+    device = torch.device(device)
+    if device.type == 'cuda' and device.index is None:
+        device = torch.device(device, index=0)
+    return device
