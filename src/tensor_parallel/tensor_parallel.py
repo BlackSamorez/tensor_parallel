@@ -50,14 +50,9 @@ class TensorParallel(nn.Module):
             return
 
         self.devices = device_ids
+        self.output_device_index = output_device_index
         self.all_cuda = all(device.type == "cuda" for device in self.devices)
         self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
-        if output_all:
-            assert output_device is None, "output_device is ignored if output_all is set to True"
-            self.output_device_index = slice(None)
-        elif output_device.type == "cuda" and output_device.index is None:
-            output_device = torch.device(output_device.type, index=0)
-            self.output_device_index = self.devices.index(output_device) if output_device is not None else 0
         world_size = len(self.devices)
 
         if config is None:
