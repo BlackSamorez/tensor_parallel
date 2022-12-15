@@ -138,7 +138,7 @@ class Config:
 def find_matching_actions(action_type: str, name: str, rules: ModuleRules) -> Dict[Arg, Action]:
     found_actions = {}
     for pattern, actions_for_pattern in rules.items():
-        if pattern.search(name) is not None or pattern == name == '':
+        if pattern.search(name) is not None:
             for key, action in actions_for_pattern.items():
                 if isinstance(key, str) and key.strip().isdigit():
                     key = int(key)  # canonoicalize int keys
@@ -216,7 +216,7 @@ def process_state_(module: nn.Module, config: Config, *, rank: int, world_size: 
     unused_patterns = set(config.state_rules.keys())
     for name, param in chain(module.named_parameters(), module.named_buffers()):
         for pattern, action in config.state_rules.items():
-            if pattern.search(name) is not None or pattern == name == '':
+            if pattern.search(name) is not None:
                 param.data = apply_action(param.data, action, rank=rank, world_size=world_size).clone()
                 # note: .clone is required so that the resulting parameter owns its storage
                 unused_patterns.discard(pattern)
