@@ -131,8 +131,9 @@ class Config:
         attr_actions = find_matching_actions("attr", name, self.attr_rules)
         input_actions = find_matching_actions("input", name, self.input_rules)
         output_actions = find_matching_actions("output", name, self.output_rules)
-        if input_actions or output_actions:
+        if attr_actions:
             process_attrs_(module, attr_actions, rank=rank, world_size=world_size)
+        if input_actions or output_actions:
             module = _TensorParallelWrapper(module, input_actions, output_actions, rank=rank, world_size=world_size)
         return module
 

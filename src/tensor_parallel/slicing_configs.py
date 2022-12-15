@@ -4,6 +4,16 @@ Optimized configs for selected models
 
 from transformers import BloomConfig
 
+def split_heads(tensor: torch.Tensor, *, dim: int, head_dim: int, rank: int, world_size: int):
+    """Split a tensor along dim such that each part size is divisible by head_dim"""
+    if dim < 0:
+        dim = (tensor.ndim + dim) % tensor.ndim
+    shape = list(tensor.shape)
+    shape[dim] //= head_dim
+    shape.insert(dim + 1, head_dim)
+    tensor_part = tensor.reshape(shape).tensor_split(world_size, dim=dim)[rank].flatten(dim, dim + 1)
+    return tensor_part
+
 
 def get_bloom_config(bloom_config: BloomConfig, devices: Sequence[torch.device]):
     return Config(
