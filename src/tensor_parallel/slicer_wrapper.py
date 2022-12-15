@@ -51,19 +51,29 @@ class Config:
     def get_default_config(cls, module: nn.Module) -> Config:
         """Make a generic config that wraps individual linear, embedding and convolutional layers"""
         config = cls({}, {}, {}, {})
+        emb_weights = {m.weight for m in module.modules() if isinstance(m, (nn.Embedding, nn.EmbeddingBag))}
+
         for name, module in module.named_modules():
-            if isinstance(module, nn.Linear):
-                assert module.weight.shape == (module.out_features, module.in_features)
-                assert module.bias is None or module.bias.shape == (module.out_features,)
-                config.state_rules[f"^{name}.(weight|bias)$"] = "split 0"
-                config.output_rules[f"^{name}$"] = {0: "gather -1"}
-            elif isinstance(module, (nn.Embedding, nn.EmbeddingBag)):
+            if isinstance(module, (nn.Embedding, nn.EmbeddingBag)):
                 assert module.max_norm is None or module.norm_type < 2
                 assert getattr(module, "bias", None) is None or module.bias.shape == module.embedding_dim
                 config.state_rules[f"^{name}.weight$"] = "split 1"
                 if hasattr(module, "bias"):
                     config.state_rules[f"^{name}.bias$"] = "split 0"
                 config.output_rules[f"^{name}$"] = {0: "gather -1"}
+            elif isinstance(module, nn.Linear):
+                assert module.weight.shape == (module.out_features, module.in_features)
+                assert module.bias is None or module.bias.shape == (module.out_features,)
+                if module.weight not in emb_weights:  # regular linear layer
+                    config.state_rules[f"^{name}.(weight|bias)$"] = "split 0"
+                    config.output_rules[f"^{name}$"] = {0: "gather -1"}
+                else:
+                    # linear weight tied with embeddings; this is a popular special case for language models;
+                    # since embedding weight will be sliced over dim 1, we should adapt to the input-sliced weight
+                    config.input_rules[f"^{name}$"] = {0: "split -1"}
+                    config.output_rules[f"^{name}$"] = {0: "sum"}
+                    if module.bias is not None:
+                        config.state_rules[f"^{name}.bias$"] = "scale"
             elif isinstance(module, conv._ConvNd) and module.groups == 1:
                 shape = [module.out_channels, module.in_channels] + list(module.kernel_size)
                 shape[:2] = shape[:2][::-1] if module.transposed else shape[:2]

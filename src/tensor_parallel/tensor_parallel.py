@@ -179,3 +179,17 @@ def canonicalize_device(device: Union[torch.device, str]) -> torch.device:
     if device.type == "cuda" and device.index is None:
         device = torch.device(device, index=0)
     return device
+
+
+class PerDeviceTensors:
+    """tensors located on different deviecs that will *not* be broadcasted when passed to TensorParallel.forward"""
+
+    def __init__(self, *tensors: torch.Tensor):
+        # note: this will not be broadcasted because broadcast_coalesced does not broadcast class properties
+        self.tensors = tuple(tensors)
+
+    def __getitem__(self, i: int):
+        return self.tensors[i]
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({self.tensors})"
