@@ -33,7 +33,10 @@ class TensorParallel(nn.Module):
         super().__init__()
         original_params = sum(p.numel() for p in module.parameters())
         assert output_device is None or output_device_index is None, "please specify either device or index, not both"
+        if device_ids is None:
+            device_ids = _get_all_device_indices() if torch.cuda.is_available() else []
         device_ids = tuple(map(canonicalize_device, device_ids))
+
         if output_device is not None:
             output_device = canonicalize_device(output_device)
             assert output_device in device_ids, f"Output device {output_device} not in {device_ids}"
@@ -41,8 +44,6 @@ class TensorParallel(nn.Module):
             del output_device
 
         self.module_shards = nn.ModuleList()
-        if device_ids is None:
-            device_ids = _get_all_device_indices()
         if device_ids is None or len(device_ids) <= 1:
             self.module_shards.append(module)
             self.device_ids = []
