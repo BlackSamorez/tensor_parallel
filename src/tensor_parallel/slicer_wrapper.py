@@ -236,9 +236,7 @@ def process_input(input_actions: Dict[Arg, str], rank: int, world_size: int, *ar
     extended_kwargs = dict(kwargs)
     extended_kwargs.update(enumerate(args))
     for target, action in input_actions.items():
-        if not isinstance(extended_kwargs[target], torch.Tensor):
-            continue  # optional parameter is None or False
-        extended_kwargs[target] = apply_action(extended_kwargs[target], action, rank=rank, world_size=world_size)
+        extended_kwargs[target] = apply_action(extended_kwargs.get(target), action, rank=rank, world_size=world_size)
     args = [extended_kwargs.pop(i) for i in range(len(args))]
     return args, extended_kwargs
 
