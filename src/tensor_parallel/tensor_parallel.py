@@ -42,6 +42,8 @@ class TensorParallel(nn.Module):
             assert output_device in device_ids, f"Output device {output_device} not in {device_ids}"
             output_device_index = device_ids.index(output_device)
             del output_device
+        elif output_device_index is None:
+            output_device_index = 0
 
         self.module_shards = nn.ModuleList()
 
