@@ -11,7 +11,7 @@ from transformers import logging
 logging.set_verbosity_error()
 
 
-from slicer_wrapper_interface import tensor_parallel
+from .slicer_wrapper_interface import tensor_parallel
 
 
 def converter_main():
@@ -26,6 +26,7 @@ def converter_main():
     print(f"Loading slices")
     model = tensor_parallel(MODEL_CLS, devices=["cpu", "cpu"]).from_pretrained(NAME)
     
+    print(f"Slices forward")
     sharded_output = model(test_input).last_hidden_state.cpu()
 
     print(f"Asserting allclose")

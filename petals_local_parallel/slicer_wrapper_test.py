@@ -13,8 +13,9 @@ from transformers import logging
 logging.set_verbosity_error()
 
 
+from .slicer_wrapper_interface import tensor_parallel
+
 import torch.distributed as dist
-from slicer_wrapper_interface import tensor_parallel
 
 BACKEND = 'nccl' if torch.cuda.is_available() else 'gloo'
 torch.set_num_threads(1)

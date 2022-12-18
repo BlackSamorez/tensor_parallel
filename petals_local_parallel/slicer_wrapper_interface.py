@@ -1,4 +1,8 @@
-import communications
+from .slicing_config import SlicingConfig
+from .slicer_wrapper import get_tensor_parallel_model_slice, MultithreadedModule
+from .slicing_configs import SLICING_CONFIGS
+from . import communications
+
 import torch
 import torch.distributed as dist
 from slicer_wrapper import MultithreadedModule, SlicingConfig, get_tensor_parallel_model_slice
@@ -10,7 +14,7 @@ def tensor_parallel(model_cls, devices, slicing_config: SlicingConfig = None):
         try:
             slicing_config = SLICING_CONFIGS[model_cls.__name__]
         except KeyError:
-            raise NotImplemented(f"Unknown model type {model_cls.__name__} and lazy mode not implemented yet. Must specify config")
+            print("No slicing_config provided. Using nn.Linear slicing fallback")
 
     if dist.is_initialized():
         communications.TENSOR_PARALLEL_COMMUNICATOR = communications.TorchrunCommunicator()
