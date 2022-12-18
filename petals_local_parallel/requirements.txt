@@ -1,9 +1,0 @@
-matplotlib==3.6.1
-numpy==1.23.3
-pandas==1.5.0
-protobuf==3.20.3
-scikit-learn==1.1.2
-tokenizers==0.12.1
-torch==1.12.1
-torchgpipe==0.0.7
-transformers==4.22.2
