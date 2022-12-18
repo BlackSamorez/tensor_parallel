@@ -10,5 +10,8 @@ def build_default_slicing_config(model: nn.Module) -> SlicingConfig:
         if isinstance(module, nn.Linear):
             slicing_config.tensor_rules[name + ".(weight|bias)"] = "vertical"
             slicing_config.module_rules[name] = {"input": {}, "output": {0: "gather"}, "attributes": {}}
+        elif isinstance(module, (nn.Embedding, nn.EmbeddingBag)):
+            slicing_config.tensor_rules[name + ".weight"] = "horizontal"
+            slicing_config.module_rules[name] = {"input": {}, "output": {0: "gather"}, "attributes": {}}
     
     return slicing_config

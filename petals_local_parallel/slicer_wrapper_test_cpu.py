@@ -10,7 +10,7 @@ from transformers import logging
 logging.set_verbosity_error()
 
 
-from slicer_wrapper_interface import tensor_parallel
+from .slicer_wrapper_interface import tensor_parallel
 
 def converter_main():
     test_input = torch.tensor([[1, 2, 3, 4, 5]])
