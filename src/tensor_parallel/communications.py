@@ -83,9 +83,9 @@ class NCCLAllGather(CollectiveOperation):
             if not used_padding:
                 dim_indices = list(range(1, gathered_tensor.ndim))
                 dim_indices.insert(gather_dim, 0)
-                concatenated_shape = list(tensors[0].shape)
+                concatenated_shape = list(x.shape)
                 concatenated_shape[gather_dim] = -1
-                return output.permute(dim_indices).reshape(concatenated_shape)
+                return gathered_tensor.permute(dim_indices).reshape(concatenated_shape)
             else:
                 # restore original tensor lengths by slicing off padding
                 gathered_tensor_parts = []
