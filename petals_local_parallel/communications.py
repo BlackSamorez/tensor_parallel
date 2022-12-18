@@ -1,9 +1,10 @@
-from abc import ABC, abstractmethod
 import threading
+from abc import ABC, abstractmethod
 
 import torch
-from torch import Tensor
 import torch.distributed as dist
+from all_to_all_communication_primitives import AllGather, AllReduce
+from torch import Tensor
 
 from .all_to_all_communication_primitives import AllReduce, AllGather
 
