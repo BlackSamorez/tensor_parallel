@@ -14,15 +14,20 @@ from tensor_parallel.tensor_parallel_configs import PREDEFINED_CONFIGS
 
 logger = logging.getLogger(__file__)
 
+
 def find_predefined_tensor_parallel_config(architectures: Sequence[str]) -> Optional[Config]:
     if len(architectures) != 1:
-        logger.warning(f"No tensor parallel config provided and model architectures list is ambigious: {architectures}. Using possible inefficient fallback")
+        logger.warning(
+            f"No tensor parallel config provided and model architectures list is ambigious: {architectures}. Using possible inefficient fallback"
+        )
         return None
 
     try:
         return PREDEFINED_CONFIGS[architectures[0]]
     except KeyError:
-        logger.warning("No tensor parallel config provided and no predefined configs can be used. Using possible inefficient fallback")
+        logger.warning(
+            "No tensor parallel config provided and no predefined configs can be used. Using possible inefficient fallback"
+        )
         return None
 
 
