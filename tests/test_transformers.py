@@ -39,17 +39,14 @@ def test_bloom_inference(use_config, devices, model_name="bigscience/bloom-560m"
 
 @pytest.mark.parametrize("num_beams", [1, 3])
 def test_bloom_generate(num_beams, model_name="bigscience/bloom-560m"):
-    devices=["cpu"] * 2
+    devices = ["cpu"] * 2
     model_config = transformers.AutoConfig.from_pretrained(model_name)
     model = transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     prompt = "Hello there!"
 
     gen_ref = tokenizer.decode(
-        model.generate(
-            tokenizer([prompt], return_tensors='pt')["input_ids"].to(devices[0]),
-            num_beams=num_beams
-        )[0]
+        model.generate(tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]), num_beams=num_beams)[0]
     )
 
     tp_config = get_bloom_config(model_config, devices)
@@ -57,10 +54,7 @@ def test_bloom_generate(num_beams, model_name="bigscience/bloom-560m"):
     del model
 
     gen = tokenizer.decode(
-        model_tp.generate(
-            tokenizer([prompt], return_tensors='pt')["input_ids"].to(devices[0]),
-            num_beams=num_beams
-        )[0]
+        model_tp.generate(tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]), num_beams=num_beams)[0]
     )
 
     assert gen == gen_ref
