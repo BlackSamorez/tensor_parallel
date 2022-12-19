@@ -2,10 +2,9 @@
 The TensorParallel module wrapper for Hugging Face PreTrainedModel
 """
 import logging
-from typing import Any, Optional, Sequence, Union, Dict
+from typing import Any, Dict, Optional, Sequence, Union
 
 import torch
-
 import transformers
 from transformers import PreTrainedModel
 
