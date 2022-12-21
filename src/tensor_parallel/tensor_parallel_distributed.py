@@ -9,6 +9,7 @@ from tensor_parallel.tensor_parallel_pretrained_model import find_predefined_ten
 
 logger = logging.getLogger(__file__)
 
+
 def get_distributed_shard(module: nn.Module, device: torch.device, config: Optional[Config]):
     if config is None:
         config = Config.get_default_config(module)
@@ -17,4 +18,10 @@ def get_distributed_shard(module: nn.Module, device: torch.device, config: Optio
     config_with_ops = config.create_collective_ops([torch.device("cpu")] * torch.distributed.get_world_size())
     # ^-- creates a copy of comfig with collective op instances, such as AllReduce and AllGather
 
-    return config.make_shard(module, device, config_with_ops, rank=torch.distributed.get_rank(), world_size=torch.distributed.get_world_size())
+    return config.make_shard(
+        module,
+        device,
+        config_with_ops,
+        rank=torch.distributed.get_rank(),
+        world_size=torch.distributed.get_world_size(),
+    )

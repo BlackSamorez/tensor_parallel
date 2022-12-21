@@ -10,7 +10,9 @@ from tensor_parallel.tensor_parallel_distributed import get_distributed_shard
 from tensor_parallel.tensor_parallel_pretrained_model import TensorParallelPreTrainedModel
 
 
-def tensor_parallel(module: nn.Module, device_ids: Optional[Sequence[torch.device]] = None, config: Optional[Config] = None, **kwargs) -> nn.Module:
+def tensor_parallel(
+    module: nn.Module, device_ids: Optional[Sequence[torch.device]] = None, config: Optional[Config] = None, **kwargs
+) -> nn.Module:
     if torch.distributed.is_initialized():
         return get_distributed_shard(module, device=torch.device(device_ids[0]), config=config, **kwargs)
     else:

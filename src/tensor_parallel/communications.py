@@ -8,7 +8,7 @@ import threading
 from typing import Any, List, Optional
 
 import torch
-from torch.distributed import all_reduce, all_gather
+from torch.distributed import all_gather, all_reduce
 
 import tensor_parallel.cross_device_ops as cross_device_ops
 

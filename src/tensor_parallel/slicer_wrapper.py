@@ -18,7 +18,14 @@ from torch import nn
 from torch.nn.modules import conv
 
 import tensor_parallel.cross_device_ops as cross_device_ops
-from tensor_parallel.communications import AllGather, AllReduce, DistributedAllGather, DistributedAllReduce, NCCLAllGather, NCCLAllReduce
+from tensor_parallel.communications import (
+    AllGather,
+    AllReduce,
+    DistributedAllGather,
+    DistributedAllReduce,
+    NCCLAllGather,
+    NCCLAllReduce,
+)
 
 Arg = Union[int, str]
 Pattern = Union[str, re.Pattern]
