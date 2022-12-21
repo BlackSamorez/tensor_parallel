@@ -11,9 +11,14 @@ from tensor_parallel.tensor_parallel_pretrained_model import TensorParallelPreTr
 
 
 def tensor_parallel(
-    module: nn.Module, device_ids: Optional[Sequence[torch.device]] = None, config: Optional[Config] = None, **kwargs
+    module: nn.Module,
+    device_ids: Optional[Sequence[torch.device]] = None,
+    config: Optional[Config] = None,
+    distributed: Optional[bool] = None,
+    **kwargs
 ) -> nn.Module:
-    if torch.distributed.is_initialized():
+    distributed = distributed if distributed is not None else torch.distributed.is_initialized()
+    if distributed:
         return get_distributed_shard(module, device=torch.device(device_ids[0]), config=config, **kwargs)
     else:
         if isinstance(module, PreTrainedModel):
