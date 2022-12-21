@@ -1,10 +1,8 @@
-from copy import deepcopy
-
 import torch.nn as nn
-
 import transformers
 
-from tensor_parallel import tensor_parallel, TensorParallel
+from tensor_parallel import TensorParallel, tensor_parallel
+
 
 def test_factory_nn_module():
     model = nn.Sequential(
