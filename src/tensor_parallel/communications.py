@@ -8,6 +8,7 @@ import threading
 from typing import Any, List, Optional
 
 import torch
+from torch.distributed import all_reduce, all_gather
 
 import tensor_parallel.cross_device_ops as cross_device_ops
 
@@ -15,6 +16,22 @@ import tensor_parallel.cross_device_ops as cross_device_ops
 class CollectiveOpetationBase:
     def __call__(self, x: torch.Tensor, rank: int):
         raise NotImplementedError()
+
+
+class DistributedAllReduce(CollectiveOpetationBase):
+    def __call__(self, x: torch.Tensor, rank: int):
+        all_reduce(x)
+
+
+class DistributedAllGather(CollectiveOpetationBase):
+    def __init__(self, world_size: int, dim: int):
+        self.dim = dim
+        self.world_size = world_size
+
+    def __call__(self, x: torch.Tensor, rank: int):
+        gathered_tensors = [torch.empty_like(x) for _ in range(self.world_size)]
+        all_gather(gathered_tensors, x)
+        return torch.cat(gathered_tensors, dim=self.dim)
 
 
 class CollectiveOperation(CollectiveOpetationBase):
