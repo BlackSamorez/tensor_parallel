@@ -48,6 +48,7 @@ def test_bloom_generate(num_beams, model_name="bigscience/bloom-560m"):
     gen_ref = tokenizer.decode(
         model.generate(tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]), num_beams=num_beams)[0]
     )
+    assert gen_ref != prompt, "Nothing is generated. This test is unreliable"
 
     tp_config = get_bloom_config(model_config, devices)
     model_tp = TensorParallelPreTrainedModel(model, devices, config=tp_config)

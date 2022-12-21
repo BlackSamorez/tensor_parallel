@@ -18,7 +18,14 @@ from torch import nn
 from torch.nn.modules import conv
 
 import tensor_parallel.cross_device_ops as cross_device_ops
-from tensor_parallel.communications import AllGather, AllReduce, NCCLAllGather, NCCLAllReduce
+from tensor_parallel.communications import (
+    AllGather,
+    AllReduce,
+    DistributedAllGather,
+    DistributedAllReduce,
+    NCCLAllGather,
+    NCCLAllReduce,
+)
 
 Arg = Union[int, str]
 Pattern = Union[str, re.Pattern]
@@ -132,6 +139,16 @@ class Config:
 
         return unique_wrappers.get(shard, shard)  # wrap the root module if needed
 
+    def make_distributed_shard(self, module: nn.Module, device: torch.device):
+        config_with_ops = self.create_collective_ops([torch.device("cpu")] * torch.distributed.get_world_size())
+        return self.make_shard(
+            module,
+            device,
+            config_with_ops,
+            rank=torch.distributed.get_rank(),
+            world_size=torch.distributed.get_world_size(),
+        )
+
     def _maybe_wrap_submodule(self, name: str, module: nn.Module, *, rank: int, world_size: int) -> nn.Module:
         """
         Apply the tensor parallelism config to the specified module, return wrapped module
@@ -190,7 +207,9 @@ def create_collective_ops(rules: dict, devices: Sequence[torch.device]):
     all_cuda = all(device.type == "cuda" for device in devices)
     unique_output_transforms = {op for output_actions in rules.values() for op in output_actions.values()}
     transform_map = {}
-    if all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
+    if torch.distributed.is_initialized():
+        make_allreduce, make_allgather = DistributedAllReduce, DistributedAllGather
+    elif all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
         make_allreduce, make_allgather = NCCLAllReduce, NCCLAllGather
     else:
         make_allreduce = partial(

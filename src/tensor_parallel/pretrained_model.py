@@ -2,28 +2,31 @@
 The TensorParallel module wrapper for Hugging Face PreTrainedModel
 """
 import logging
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any, Dict, Optional, Sequence
 
 import torch
 import transformers
-from transformers import PreTrainedModel
+from transformers import PretrainedConfig, PreTrainedModel
 
 from tensor_parallel.slicer_wrapper import Config
-from tensor_parallel.tensor_parallel import TensorParallel
-from tensor_parallel.tensor_parallel_configs import PREDEFINED_CONFIGS
+from tensor_parallel.slicing_configs import PREDEFINED_CONFIGS
+from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids
 
 logger = logging.getLogger(__file__)
 
 
-def find_predefined_tensor_parallel_config(architectures: Sequence[str]) -> Optional[Config]:
-    if len(architectures) != 1:
+def find_predefined_tensor_parallel_config(
+    model_config: PretrainedConfig, device_ids: Optional[Sequence[torch.device]]
+) -> Optional[Config]:
+    device_ids = check_device_ids(device_ids)
+    if len(model_config.architectures) != 1:
         logger.warning(
-            f"No tensor parallel config provided and model architectures list is ambigious: {architectures}. Using possible inefficient fallback"
+            f"No tensor parallel config provided and model architectures list is ambigious: {model_config.architectures}. Using possible inefficient fallback"
         )
         return None
 
     try:
-        return PREDEFINED_CONFIGS[architectures[0]]
+        return PREDEFINED_CONFIGS[model_config.architectures[0]](model_config, device_ids)
     except KeyError:
         logger.warning(
             "No tensor parallel config provided and no predefined configs can be used. Using possible inefficient fallback"
@@ -43,7 +46,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
         super().__init__(module.config)  # Temporary empty config. Gets replaced in from_pretrained
 
         if config is None:
-            config = find_predefined_tensor_parallel_config(module.config.architectures)
+            config = find_predefined_tensor_parallel_config(module.config, device_ids)
 
         self.tensor_parallel = TensorParallel(module, device_ids, output_device, output_device_index, config)
 
