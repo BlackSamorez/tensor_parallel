@@ -32,9 +32,7 @@ class TensorParallel(nn.Module):
         super().__init__()
         original_params = sum(p.numel() for p in module.parameters())
         assert output_device is None or output_device_index is None, "please specify either device or index, not both"
-        if device_ids is None:
-            device_ids = _get_all_device_indices() if torch.cuda.is_available() else []
-        device_ids = tuple(map(canonicalize_device, device_ids))
+        device_ids = check_device_ids(device_ids)
 
         if output_device is not None:
             output_device = canonicalize_device(output_device)
@@ -179,6 +177,12 @@ def canonicalize_device(device: Union[torch.device, str]) -> torch.device:
     if device.type == "cuda" and device.index is None:
         device = torch.device(device, index=0)
     return device
+
+
+def check_device_ids(device_ids: Optional[Sequence[torch.device]]) -> Sequence[torch.device]:
+    if device_ids is None:
+        device_ids = _get_all_device_indices() if torch.cuda.is_available() else []
+    return tuple(map(canonicalize_device, device_ids))
 
 
 class PerDeviceTensors:

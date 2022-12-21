@@ -139,6 +139,16 @@ class Config:
 
         return unique_wrappers.get(shard, shard)  # wrap the root module if needed
 
+    def make_distributed_shard(self, module: nn.Module, device: torch.device):
+        config_with_ops = self.create_collective_ops([torch.device("cpu")] * torch.distributed.get_world_size())
+        return self.make_shard(
+            module,
+            device,
+            config_with_ops,
+            rank=torch.distributed.get_rank(),
+            world_size=torch.distributed.get_world_size(),
+        )
+
     def _maybe_wrap_submodule(self, name: str, module: nn.Module, *, rank: int, world_size: int) -> nn.Module:
         """
         Apply the tensor parallelism config to the specified module, return wrapped module

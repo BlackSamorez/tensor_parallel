@@ -7,14 +7,16 @@ NB: some of these configs get fairly complicated in order to squeeze a bit of ex
 """
 from functools import partial
 from itertools import chain
-from typing import Sequence
+from typing import Callable, Dict, Sequence
 
 import torch
-from transformers import BloomConfig
+from transformers import BloomConfig, PretrainedConfig
 
 from tensor_parallel import Config
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.tensor_parallel import PerDeviceTensors
+
+ConfigGetter = Callable[[PretrainedConfig, Sequence[torch.device]], Config]
 
 
 def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device]) -> Config:
@@ -81,3 +83,8 @@ def split_alibi(alibi: torch.Tensor, *, rank: int, num_heads: int, world_size: i
     alibi_expanded = alibi.reshape(-1, num_heads, *alibi.shape[1:])
     alibi_part = alibi_expanded.tensor_split(world_size, dim=1)[rank]
     return alibi_part.reshape(-1, *alibi.shape[1:])
+
+
+PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
+    "BloomModel": get_bloom_config,
+}

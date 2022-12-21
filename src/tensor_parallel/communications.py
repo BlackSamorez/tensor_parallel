@@ -18,22 +18,6 @@ class CollectiveOpetationBase:
         raise NotImplementedError()
 
 
-class DistributedAllReduce(CollectiveOpetationBase):
-    def __call__(self, x: torch.Tensor, rank: int):
-        all_reduce(x)
-
-
-class DistributedAllGather(CollectiveOpetationBase):
-    def __init__(self, world_size: int, dim: int):
-        self.dim = dim
-        self.world_size = world_size
-
-    def __call__(self, x: torch.Tensor, rank: int):
-        gathered_tensors = [torch.empty_like(x) for _ in range(self.world_size)]
-        all_gather(gathered_tensors, x)
-        return torch.cat(gathered_tensors, dim=self.dim)
-
-
 class CollectiveOperation(CollectiveOpetationBase):
     def __init__(self, world_size: int, func: callable, authoritative_rank: int = 0):
         """
@@ -185,3 +169,19 @@ class AllGather(CollectiveOpetationBase):
                 self.parts_ready = threading.Event()
             # note: we can safely update these properties because all ranks have
             # copied self.parts_* to locals before passing parts_ready.wait
+
+
+class DistributedAllReduce(CollectiveOpetationBase):
+    def __call__(self, x: torch.Tensor, rank: int):
+        all_reduce(x)
+
+
+class DistributedAllGather(CollectiveOpetationBase):
+    def __init__(self, world_size: int, dim: int):
+        self.dim = dim
+        self.world_size = world_size
+
+    def __call__(self, x: torch.Tensor, rank: int):
+        gathered_tensors = [torch.empty_like(x) for _ in range(self.world_size)]
+        all_gather(gathered_tensors, x)
+        return torch.cat(gathered_tensors, dim=self.dim)
