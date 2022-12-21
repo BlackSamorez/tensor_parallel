@@ -2,7 +2,7 @@
 The TensorParallel module wrapper for Hugging Face PreTrainedModel
 """
 import logging
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Any, Dict, Optional, Sequence
 
 import torch
 import transformers
@@ -10,7 +10,6 @@ from transformers import PretrainedConfig, PreTrainedModel
 
 from tensor_parallel.slicer_wrapper import Config
 from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids
-from tensor_parallel.tensor_parallel_configs import PREDEFINED_CONFIGS
 
 logger = logging.getLogger(__file__)
 
