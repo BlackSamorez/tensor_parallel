@@ -12,8 +12,8 @@ from typing import Callable, Dict, Sequence
 import torch
 from transformers import BloomConfig, PretrainedConfig
 
-from tensor_parallel import Config
 from tensor_parallel.communications import CollectiveOperation
+from tensor_parallel.slicer_wrapper import Config
 from tensor_parallel.tensor_parallel import PerDeviceTensors
 
 ConfigGetter = Callable[[PretrainedConfig, Sequence[torch.device]], Config]

@@ -9,6 +9,7 @@ import transformers
 from transformers import PretrainedConfig, PreTrainedModel
 
 from tensor_parallel.slicer_wrapper import Config
+from tensor_parallel.slicing_configs import PREDEFINED_CONFIGS
 from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids
 
 logger = logging.getLogger(__file__)
@@ -45,7 +46,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
         super().__init__(module.config)  # Temporary empty config. Gets replaced in from_pretrained
 
         if config is None:
-            config = find_predefined_tensor_parallel_config(module.config.architectures, device_ids)
+            config = find_predefined_tensor_parallel_config(module.config, device_ids)
 
         self.tensor_parallel = TensorParallel(module, device_ids, output_device, output_device_index, config)
 
