@@ -3,7 +3,7 @@ import torch
 import transformers
 from transformers import AutoTokenizer
 
-from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel
+from tensor_parallel import TensorParallel, tensor_parallel
 from tensor_parallel.slicing_configs import get_bloom_config
 
 
@@ -54,7 +54,7 @@ def test_generate(num_beams, model_name):
     )
     assert gen_ref != prompt, "Nothing is generated. This test is unreliable"
 
-    model_tp = TensorParallelPreTrainedModel(model, devices)
+    model_tp = tensor_parallel(model, devices)
     del model
 
     gen = tokenizer.decode(
