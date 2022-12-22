@@ -38,10 +38,14 @@ def test_bloom_inference(use_config, devices, model_name="bigscience/bloom-560m"
 
 
 @pytest.mark.parametrize("num_beams", [1, 3])
-def test_bloom_generate(num_beams, model_name="bigscience/bloom-560m"):
+@pytest.mark.parametrize("model_name", ["bigscience/bloom-560m", "t5-small"])
+def test_generate(num_beams, model_name):
     devices = ["cpu"] * 2
     model_config = transformers.AutoConfig.from_pretrained(model_name)
-    model = transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+    if model_name == "t5-small":
+        model = transformers.T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+    else:
+        model = transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     prompt = "Hello there!"
 
@@ -50,8 +54,7 @@ def test_bloom_generate(num_beams, model_name="bigscience/bloom-560m"):
     )
     assert gen_ref != prompt, "Nothing is generated. This test is unreliable"
 
-    tp_config = get_bloom_config(model_config, devices)
-    model_tp = TensorParallelPreTrainedModel(model, devices, config=tp_config)
+    model_tp = TensorParallelPreTrainedModel(model, devices)
     del model
 
     gen = tokenizer.decode(
