@@ -171,13 +171,6 @@ def find_matching_actions(action_type: str, name: str, rules: ModuleRules) -> Di
     for pattern, actions_for_pattern in rules.items():
         if pattern.search(name) is not None:
             for key, action in actions_for_pattern.items():
-                if isinstance(key, str) and key.strip().isdigit():
-                    key = int(key)  # canonoicalize int keys
-                if found_actions.get(key, action) != action:
-                    raise ValueError(
-                        f"Found conflicting {action_type} rule for module {name}, key {key}:"
-                        f" {found_actions[key]} vs {action}"
-                    )
                 found_actions[key] = action
     return found_actions
 
