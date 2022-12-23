@@ -10,7 +10,7 @@ from itertools import chain
 from typing import Callable, Dict, Sequence
 
 import torch
-from transformers import BloomConfig, PretrainedConfig
+from transformers import BloomConfig, PretrainedConfig, T5Config
 
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.slicer_wrapper import Config
@@ -85,6 +85,46 @@ def split_alibi(alibi: torch.Tensor, *, rank: int, num_heads: int, world_size: i
     return alibi_part.reshape(-1, *alibi.shape[1:])
 
 
+def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Config:
+    world_size = len(devices)
+    num_heads = model_config.num_heads
+    head_dim = model_config.d_kv
+    gather_kv_across_ranks = CollectiveOperation(
+        world_size=world_size, func=lambda *kvs: [PerDeviceTensors(*chain(*kvs))] * world_size
+    )  # this operation ensures that we get attention cache for all heads on each device
+
+    select_kv_for_rank = lambda kvs, rank: (kvs[2 * rank], kvs[2 * rank + 1]) if kvs else None
+
+    return Config(
+        state_rules={
+            r".*SelfAttention\.q\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r".*SelfAttention\.k\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r".*SelfAttention\.v\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r".*relative_attention_bias\.weight": "split 1",
+            r".*SelfAttention\.o\.weight": "split 1",
+            r".*SelfAttention\.o\.bias": "scale",
+            r".*DenseReluDense\.wi\.(weight|bias)": "split 0",
+            r".*DenseReluDense\.wi_0\.(weight|bias)": "split 0",
+            r".*DenseReluDense\.wi_1\.(weight|bias)": "split 0",
+            r".*DenseReluDense\.wo\.weight": "split 1",
+            r".*DenseReluDense\.wo\.bias": "scale",
+        },
+        input_rules={},
+        output_rules={
+            r".*SelfAttention$": {0: "sum"},
+            r".*DenseReluDense$": {0: "sum"},
+        },
+        attr_rules={
+            r".*SelfAttention$": {
+                "n_heads": partial(split_num_heads, world_size=world_size),
+                "inner_dim": partial(split_num_heads, world_size=world_size),
+            },
+            r".*relative_attention_bias$": {"embedding_dim": partial(split_num_heads, world_size=world_size)},
+        },
+    )
+
+
 PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "BloomModel": get_bloom_config,
+    "T5ForConditionalGeneration": get_t5_config,
 }
