@@ -43,9 +43,15 @@ def test_generate(num_beams, model_name):
     devices = ["cpu"] * 2
     model_config = transformers.AutoConfig.from_pretrained(model_name)
     if model_name == "t5-small":
-        model = transformers.T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+        model = (
+            transformers.T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True)
+            .float()
+            .to(devices[0])
+        )
     else:
-        model = transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+        model = (
+            transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+        )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     prompt = "Hello there!"
 
