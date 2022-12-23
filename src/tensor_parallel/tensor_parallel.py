@@ -79,9 +79,7 @@ class TensorParallel(nn.Module):
             f"This means that each device uses {inefficiency_rate * 100:.3f}% extra memory for parameters",
         )
 
-    def forward(self, *args, **kwargs):
-        if len(self.module_shards) <= 1:
-            return [self.module_shards[0](*args, **kwargs)][self.output_device_index]
+    def prepare_args_kwargs_for_forward(self, *args, **kwargs):
         args_and_kwargs = (args, kwargs)
         flat_tensors = [obj for obj in nested_flatten(args_and_kwargs) if isinstance(obj, torch.Tensor)]
         flat_tensors_replicated = broadcast_coalesced(flat_tensors, self.devices, all_cuda=self.all_cuda)
@@ -97,7 +95,12 @@ class TensorParallel(nn.Module):
                     args_and_kwargs_replicated[idx].append(obj)
         for idx in range(len(self.module_shards)):
             args_and_kwargs_replicated[idx] = nested_pack(args_and_kwargs_replicated[idx], args_and_kwargs)
-        inputs, kwargs_tup = zip(*args_and_kwargs_replicated)
+        return zip(*args_and_kwargs_replicated)
+
+    def forward(self, *args, **kwargs):
+        if len(self.module_shards) <= 1:
+            return [self.module_shards[0](*args, **kwargs)][self.output_device_index]
+        inputs, kwargs_tup = self.prepare_args_kwargs_for_forward(*args, **kwargs)
         if self.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
             return parallel_apply(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
         else:

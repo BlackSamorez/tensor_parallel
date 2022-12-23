@@ -3,6 +3,7 @@ Utility functions that help you process nested dicts, tuples, lists and namedtup
 Based on: https://stackoverflow.com/questions/49739102/python-nested-dictionary-comparison
 """
 
+from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 
 def nested_compare(t, u):
     """
@@ -61,6 +62,8 @@ def _nested_pack(flat_iter, structure):
         return type(structure)(*[_nested_pack(flat_iter, x) for x in structure])
     elif isinstance(structure, (list, tuple)):
         return type(structure)(_nested_pack(flat_iter, x) for x in structure)
+    elif isinstance(structure, BaseModelOutputWithPastAndCrossAttentions):
+        return BaseModelOutputWithPastAndCrossAttentions({k: _nested_pack(flat_iter, v) for k, v in sorted(structure.items())})
     elif isinstance(structure, dict):
         return {k: _nested_pack(flat_iter, v) for k, v in sorted(structure.items())}
     else:

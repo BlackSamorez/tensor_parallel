@@ -32,9 +32,6 @@ def tensor_parallel(
         return config.make_distributed_shard(module, device=torch.device(device_ids[0]), **kwargs)
     else:
         if isinstance(module, PreTrainedModel):
-            if module.config.is_encoder_decoder:
-                raise NotImplementedError("Encoder-decoder not yet supported")
-            else:
-                return TensorParallelPreTrainedModel(module, device_ids=device_ids, config=config, **kwargs)
+            return TensorParallelPreTrainedModel(module, device_ids=device_ids, config=config, **kwargs)
         else:
             return TensorParallel(module, device_ids=device_ids, config=config, **kwargs)
