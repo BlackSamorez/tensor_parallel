@@ -5,6 +5,7 @@ Based on: https://stackoverflow.com/questions/49739102/python-nested-dictionary-
 
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 
+
 def nested_compare(t, u):
     """
     Return whether nested structure of t1 and t2 matches.
@@ -63,7 +64,9 @@ def _nested_pack(flat_iter, structure):
     elif isinstance(structure, (list, tuple)):
         return type(structure)(_nested_pack(flat_iter, x) for x in structure)
     elif isinstance(structure, BaseModelOutputWithPastAndCrossAttentions):
-        return BaseModelOutputWithPastAndCrossAttentions({k: _nested_pack(flat_iter, v) for k, v in sorted(structure.items())})
+        return BaseModelOutputWithPastAndCrossAttentions(
+            {k: _nested_pack(flat_iter, v) for k, v in sorted(structure.items())}
+        )
     elif isinstance(structure, dict):
         return {k: _nested_pack(flat_iter, v) for k, v in sorted(structure.items())}
     else:
