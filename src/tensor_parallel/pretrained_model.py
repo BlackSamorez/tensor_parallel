@@ -5,12 +5,13 @@ import logging
 from typing import Any, Dict, Optional, Sequence
 
 import torch
+from torch import nn
 import transformers
 from transformers import PretrainedConfig, PreTrainedModel
 
-from tensor_parallel.slicer_wrapper import Config
+from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE, Config
 from tensor_parallel.slicing_configs import PREDEFINED_CONFIGS
-from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids
+from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids, parallel_apply, parallel_apply_simple
 
 logger = logging.getLogger(__file__)
 
@@ -50,6 +51,13 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
 
         self.tensor_parallel = TensorParallel(module, device_ids, output_device, output_device_index, config)
 
+        self.encoder_shards = nn.ModuleList()
+        if module.config.is_encoder_decoder:
+            for encoder_decoder_shard in self.tensor_parallel.module_shards:
+                self.encoder_shards.append(
+                    encoder_decoder_shard.get_encoder()
+                )
+
     def forward(self, *args, **kwargs):
         return self.tensor_parallel(*args, **kwargs)
 
@@ -65,3 +73,20 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
     def _reorder_cache(self, past, beam_idx):
         for shard in self.tensor_parallel.module_shards:
             shard._reorder_cache(past, beam_idx)
+    
+    def get_encoder(self):
+        class _EncoderWrapper(torch.nn.Module):
+            def __init__(self, tensor_parallel_pretrained_model: TensorParallelPreTrainedModel) -> None:
+                super().__init__()
+                self.tensor_parallel_pretrained_model = tensor_parallel_pretrained_model
+
+            def forward(self, *args, **kwargs):
+                if len(self.tensor_parallel_pretrained_model.encoder_shards) <= 1:
+                    return [self.encoder_shards[0](*args, **kwargs)][self.tensor_parallel_pretrained_model.tensor_parallel.output_device_index]
+                inputs, kwargs_tup = self.tensor_parallel_pretrained_model.tensor_parallel.prepare_args_kwargs_for_forward(*args, **kwargs)
+                if self.tensor_parallel_pretrained_model.tensor_parallel.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
+                    return parallel_apply(self.tensor_parallel_pretrained_model.encoder_shards, inputs, kwargs_tup, self.tensor_parallel_pretrained_model.tensor_parallel.devices)[self.tensor_parallel_pretrained_model.tensor_parallel.output_device_index]
+                else:
+                    return parallel_apply_simple(self.tensor_parallel_pretrained_model.encoder_shards, inputs, kwargs_tup, self.tensor_parallel_pretrained_model.tensor_parallel.devices)[self.tensor_parallel_pretrained_model.tensor_parallel.output_device_index]
+
+        return _EncoderWrapper(self)
