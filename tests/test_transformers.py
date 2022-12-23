@@ -53,18 +53,21 @@ def test_generate(num_beams, model_name):
             transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
         )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    prompt = "Hello there!"
+    prompt = "Translate from German to English: How are you?"
 
     gen_ref = tokenizer.decode(
-        model.generate(tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]), num_beams=num_beams)[0]
+        model.generate(
+            tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]), num_beams=num_beams, min_length=20
+        )[0]
     )
-    assert gen_ref != prompt, "Nothing is generated. This test is unreliable"
 
     model_tp = tensor_parallel(model, devices)
     del model
 
     gen = tokenizer.decode(
-        model_tp.generate(tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]), num_beams=num_beams)[0]
+        model_tp.generate(
+            tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]), num_beams=num_beams, min_length=20
+        )[0]
     )
 
     assert gen == gen_ref
