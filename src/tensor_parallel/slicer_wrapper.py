@@ -171,6 +171,13 @@ def find_matching_actions(action_type: str, name: str, rules: ModuleRules) -> Di
     for pattern, actions_for_pattern in rules.items():
         if pattern.search(name) is not None:
             for key, action in actions_for_pattern.items():
+                if isinstance(key, str) and key.strip().isdigit():
+                    key = int(key)  # canonoicalize int keys
+                if found_actions.get(key, action) != action:
+                    raise ValueError(
+                        f"Found conflicting {action_type} rule for module {name}, key {key}:"
+                        f" {found_actions[key]} vs {action}"
+                    )
                 found_actions[key] = action
     return found_actions
 
@@ -180,10 +187,6 @@ def apply_action(input: torch.Tensor, action: Action, *, rank: int, world_size: 
         return action(input, rank=rank)  # allreduce/allgather or a custom user-defined callable
     action_type, *opts = action.split()
     if action_type == "split":
-        dim = int(opts[0])
-        return torch.tensor_split(input, world_size, dim=dim)[rank]
-    if action_type == "split_with_sizes":
-        assert len(opts) == 3 and all(map(str.isdigit, opts))
         dim = int(opts[0])
         return torch.tensor_split(input, world_size, dim=dim)[rank]
     if action_type == "scale":
