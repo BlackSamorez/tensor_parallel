@@ -123,7 +123,7 @@ class Config:
         }
         shard = deepcopy(module, memo=substitutes).to(device)
         # ^-- note: the memo=... above will replace all parameters and buffers with empty tensors
-        del module
+        del module, substitutes
 
         # convert parameters and buffers
         process_state_(shard, source_tensors, config, rank=rank, world_size=world_size)
