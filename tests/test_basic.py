@@ -35,6 +35,8 @@ def test_embeds_and_linear(devices):
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu",) * 2, ("cpu",) * 3, ("cpu",) * 4])
 @pytest.mark.parametrize("extra_options", [{}, {"padding": "same"}, {"stride": 2}, {"dilation": 2}])
 def test_convs(devices, extra_options):
+    batchnorm_cls = (None, nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)
+    # ^-- note: batchnorms test that tensor_parallel handles buffers (non-parameter state tensors) correctly
     for Conv, nd in (
         (nn.Conv1d, 1),
         (nn.Conv2d, 2),
@@ -47,6 +49,7 @@ def test_convs(devices, extra_options):
             continue  # unsupported by pytorch
         model = nn.Sequential(
             Conv(32, 64, kernel_size=(3,) * nd, **extra_options),
+            batchnorm_cls[nd](64),
             nn.ReLU(),
             Conv(64, 14, kernel_size=(3,) * nd, **extra_options),
         )
