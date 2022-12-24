@@ -14,6 +14,7 @@ from itertools import chain
 from typing import Callable, Dict, Sequence, Union
 
 import torch
+import torch.distributed
 from torch import nn
 from torch.nn.modules import conv
 
@@ -55,7 +56,7 @@ class Config:
         self.state_rules, self.input_rules, self.output_rules, self.attr_rules = all_rules
 
     @classmethod
-    def get_default_config(cls, module: nn.Module) -> Config:
+    def get_default_config(cls, module: nn.Module, device_ids: Sequence[torch.device]) -> Config:
         """Make a generic config that wraps individual linear, embedding and convolutional layers"""
         config = cls({}, {}, {}, {})
         emb_weights = {m.weight for m in module.modules() if isinstance(m, (nn.Embedding, nn.EmbeddingBag))}
@@ -88,16 +89,33 @@ class Config:
                 assert module.weight.shape == shape, f"{module.weight.shape} != {shape}"
                 assert module.bias is None or module.bias.shape == (module.out_channels,), module.bias.shape
                 config.state_rules[f"^{name}.weight$"] = "split 1" if module.transposed else "split 0"
-                config.state_rules[f"^{name}.bias$"] = "split 0"
+                if module.bias is not None:
+                    config.state_rules[f"^{name}.bias$"] = "split 0"
                 config.output_rules[f"^{name}$"] = {0: "gather 1"}
             elif isinstance(module, conv._ConvNd) and module.groups != 1:
-                logger.warning(
-                    f"AutoConfig does not support sharding convolution layers {name} with {module.groups} groups yet; "
-                    "If you're sure that you need it, implement sharding in place of this message and open a PR"
-                )
+                # group conv: split each group individually over input channels to avoid changing module.groups
+                groups = module.groups
+                shape = [module.out_channels // groups, module.in_channels // groups] + list(module.kernel_size)
+                shape[:2] = shape[:2][::-1] if module.transposed else shape[:2]
+                shape[0] *= module.groups
+                shape = tuple(shape)
+                assert module.weight.shape == shape, f"{module.weight.shape} != {shape}"
+                assert module.bias is None or module.bias.shape == (module.out_channels,), module.bias.shape
+                if not module.transposed:
+                    config.state_rules[f"^{name}.weight$"] = "split 1"
+                else:
+                    config.state_rules[f"^{name}.weight$"] = partial(
+                        _split_groups, dim=0, groups=groups, world_size=len(device_ids)
+                    )
+                if module.bias is not None:
+                    config.state_rules[f"^{name}.bias$"] = "scale"
+                config.input_rules[f"^{name}$"] = {
+                    0: partial(_split_groups, dim=1, groups=groups, world_size=len(device_ids))
+                }
+                config.output_rules[f"^{name}$"] = {0: "sum"}
         return config
 
-    def create_collective_ops(self, devices):
+    def create_collective_ops(self, devices: Sequence[torch.device]):
         """
         Return a copy of config with thread-parallel collective operations, such as AllGather and AllReduce
 
@@ -302,3 +320,13 @@ class _TensorParallelWrapper(nn.Module):
         args, kwargs = process_input(self.input_actions, self.rank, self.world_size, *args, **kwargs)
         output = self.module(*args, **kwargs)
         return process_output(output, self.output_actions, rank=self.rank, world_size=self.world_size)
+
+
+def _split_groups(tensor: torch.Tensor, dim: int, *, groups: int, rank: int, world_size: int) -> torch.Tensor:
+    """split a tensor containing multiple groups by splitting each group individually"""
+    shape = list(tensor.shape)
+    shape[dim] = shape[dim] // groups
+    shape.insert(dim, groups)
+    grouped_tensor = tensor.reshape(*shape)
+    grouped_shard = torch.tensor_split(grouped_tensor, world_size, dim=dim + 1)[rank]
+    return torch.flatten(grouped_shard, start_dim=dim, end_dim=dim + 1)
