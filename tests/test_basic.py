@@ -33,7 +33,7 @@ def test_embeds_and_linear(devices):
 
 
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu",) * 2, ("cpu",) * 3, ("cpu",) * 4])
-@pytest.mark.parametrize("extra_options", [{}, {"padding": "same"}, {"stride": 2}, {"dilation": 2}])
+@pytest.mark.parametrize("extra_options", [{}, {"padding": "same"}, {"stride": 2}, {"dilation": 2}, {"groups": 2}])
 def test_convs(devices, extra_options):
     batchnorm_cls = (None, nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)
     # ^-- note: batchnorms test that tensor_parallel handles buffers (non-parameter state tensors) correctly
@@ -51,17 +51,16 @@ def test_convs(devices, extra_options):
             Conv(32, 64, kernel_size=(3,) * nd, **extra_options),
             batchnorm_cls[nd](64),
             nn.ReLU(),
-            Conv(64, 14, kernel_size=(3,) * nd, **extra_options),
+            Conv(64, 32, kernel_size=(3,) * nd, **extra_options),
         )
-        inputs = torch.randn(3, 32, *[10 for _ in range(nd)])
-        ref_out = model(inputs)
+        inputs1 = torch.randn(3, 32, *[10 for _ in range(nd)], requires_grad=True)
+        inputs2 = inputs1.detach().clone().requires_grad_(True)
+        ref_out = model(inputs1)
         ref_out.norm().backward()
 
         model_tp = deepcopy(model)  # deepcopy to avoid accidental grad spillage and false positives
         model_tp = TensorParallel(model_tp, device_ids=devices)
-        out_ours = model_tp(inputs)
+        out_ours = model_tp(inputs2)
         out_ours.norm().backward()
-        assert torch.allclose(ref_out, out_ours, atol=1e-6)
-        dim = 1 if model[0].transposed else 0  # concat over output channels
-        our_grad = torch.cat([next(shard[0].parameters()).grad for shard in model_tp.module_shards], dim=dim)
-        assert torch.allclose(model[0].weight.grad, our_grad, atol=1e-6)
+        assert torch.allclose(ref_out, out_ours, atol=1e-6), abs(ref_out - out_ours).max()
+        assert torch.allclose(inputs1.grad, inputs2.grad, atol=1e-5), abs(inputs1.grad - inputs2.grad).max()

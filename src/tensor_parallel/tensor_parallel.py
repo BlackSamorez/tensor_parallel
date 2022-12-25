@@ -55,7 +55,7 @@ class TensorParallel(nn.Module):
             return
 
         if config is None:
-            config = Config.get_default_config(module)
+            config = Config.get_default_config(module, self.devices)
             logger.info("Using automatic config: sharding individual linear/conv/emb layers")
 
         config_with_ops = config.create_collective_ops(self.devices)
