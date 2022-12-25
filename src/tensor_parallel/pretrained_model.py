@@ -29,7 +29,7 @@ def find_predefined_tensor_parallel_config(
         return PREDEFINED_CONFIGS[model_config.architectures[0]](model_config, device_ids)
     except KeyError:
         logger.warning(
-            "Using automatic config: o tensor parallel config provided and no predefined configs can be used"
+            "Using automatic config: no tensor parallel config provided and no predefined configs can be used"
         )
         return None
 
