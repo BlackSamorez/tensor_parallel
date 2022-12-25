@@ -1,56 +1,34 @@
-# petals_local_parallel
-YSDA project
+# tensor_parallel
+
+Run your PyTorch model on multiple GPUs from basic python
 
 ```python
-import torch, torch.nn as nn
-model = nn.Sequential(nn.Embedding(1337, 64), nn.LayerNorm(64), nn.ReLU(), nn.Linear(128, 10))
+import torch
+from transformers import T5Tokenizer, T5ForConditionalGeneration
 
-from tensor_parallel import TensorParallel
-model = TensorParallel(model, device_ids=['cuda:0', 'cuda:1'])
+from tensor_parallel import tensor_parallel # <- interface for automatic optimal backend selection
 
-normal_outputs = model(**normal_inputs)  # forward and backward works just like in the base model
+tokenizer = T5Tokenizer.from_pretrained("t5-small")
+model = T5ForConditionalGeneration.from_pretrained("t5-small")
+
+model = tensor_parallel(model, ["cuda:0", "cuda:1"]) # <- magic happens here
+# only half of the model is placed on each GPU reducing memory footprint twofold
+
+inputs = tokenizer("Translate from German to English: How are you?", return_tensors="pt")["input_ids"].to("cuda:0")
+outputs = model.generate(inputs, num_beams=5)
+print(tokenizer.decode(outputs[0]))  # Wie sind Sie?
 ```
 
-## Benchmarking tutorial
+## Installation
 
-You may either use manual benchmark (```benchmark_manual.py```) or auto (```markbench.py```) 
+The recomended way to install this package is to use [pip](https://pypi.org/project/pip/):
+```
+pip install tensor_parallel
+```
 
-#### Manual benchmark
+### Code style
 
-consider command line arguments:
+We use [black](https://black.readthedocs.io/en/stable/the_black_code_style/current_style.html) and [isort](https://pycqa.github.io/isort/) for all pull requests.
+Before committing your code, simply run `black . && isort .` and you will be fine.
 
-```-d | do_backward``` -- wether you need backward passes or not
-
-```-n | num_iter ```   -- number of iterations
-
-```-s | seq_length```  -- sequence length
-
-```-b | batch_size```  -- okay
-
-```-c | bloomconfig``` -- str used in BloomConfig().from_pretrained to specify the model you need
-
-```CUDA_VISIBLE_DEVICES``` -- gpus, you are using
-
-```nproc_per_node```       -- # of gpus/ processes
-
-Don't forget to set correct gpu ids: ```export CUDA_DEVICE_ORDER=PCI_BUS_ID```
-
-So the following command
-``` CUDA_VISIBLE_DEVICES=4,5 torchrun --nproc_per_node 2 benchmark.py -d 0 -n 100 -s 17 -b 16 -c bloom ```
-will run the manual benchmark with no backward pass, 100 iterations, sequence length of 17, batch size of 16 and "bloom" 176B model.
-
-
-#### Auto benchmark
-
-no command line arguments this time, just run ```markbench.py```
-
-The script will run several experiments in cycle. To see the parameters, check the experiment setting section in the ```markbench.py```.
-Models are tested both with and without backward passes. The results will be printed for all of the ranks. (MESS)
-
-#### TODO:
-
-- Decide which models are too big for backward passes and don't check them
-- Decide what to do if one of the experiments failed
-
-
-
+--------------------------------------------------------------------------------
