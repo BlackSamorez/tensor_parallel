@@ -21,7 +21,7 @@ def find_predefined_tensor_parallel_config(
     device_ids = check_device_ids(device_ids)
     if len(model_config.architectures) != 1:
         logger.warning(
-            f"No tensor parallel config provided and model architectures list is ambigious: {model_config.architectures}. Using automatic config"
+            f"Using automatic config: no tensor parallel config provided and model architectures list is ambigious: {model_config.architectures}"
         )
         return None
 
@@ -29,7 +29,7 @@ def find_predefined_tensor_parallel_config(
         return PREDEFINED_CONFIGS[model_config.architectures[0]](model_config, device_ids)
     except KeyError:
         logger.warning(
-            "No tensor parallel config provided and no predefined configs can be used. Using automatic config"
+            "Using automatic config: o tensor parallel config provided and no predefined configs can be used"
         )
         return None
 
