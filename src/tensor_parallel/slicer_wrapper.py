@@ -135,9 +135,9 @@ class Config:
             len(list(module.children())) != 0
         ), "Please ensure module is a container (e.g. Sequential), not a single layer"
         source_tensors = dict(chain(module.named_parameters(), module.named_buffers()))
-        _wrap_parameter = lambda x, buf: nn.Parameter(buf, x.requires_grad) if isinstance(x, nn.Parameter) else x
+        _maybe_parameter = lambda x, buf: nn.Parameter(buf, x.requires_grad) if isinstance(x, nn.Parameter) else x
         substitutes = {
-            id(x): _wrap_parameter(x, torch.empty([], dtype=x.dtype, device=x.device, requires_grad=x.requires_grad))
+            id(x): _maybe_parameter(x, torch.empty([], dtype=x.dtype, device=x.device, requires_grad=x.requires_grad))
             for x in source_tensors.values()
         }
         shard = deepcopy(module, memo=substitutes).to(device)
