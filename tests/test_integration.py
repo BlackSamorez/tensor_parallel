@@ -61,10 +61,10 @@ def test_tp_bloom_block(devices, custom_config):
     )
     y_ours.backward(grad_proj)
 
-    assert torch.allclose(y_ours, y_ref, atol=1e-6)
-    assert torch.allclose(test_inputs1.grad, test_inputs2.grad, atol=1e-6)
-    assert torch.allclose(cache_ref[0], cache_ours[0], atol=1e-6)
-    assert torch.allclose(cache_ref[1], cache_ours[1], atol=1e-6)
+    torch.testing.assert_close(y_ours, y_ref, atol=1e-6, rtol=1e-05)
+    torch.testing.assert_close(test_inputs1.grad, test_inputs2.grad, atol=1e-6, rtol=1e-05)
+    torch.testing.assert_close(cache_ref[0], cache_ours[0], atol=1e-6, rtol=1e-05)
+    torch.testing.assert_close(cache_ref[1], cache_ours[1], atol=1e-6, rtol=1e-05)
 
 
 def _prepare_attn_mask(attention_mask: torch.Tensor, input_shape: Tuple[int, int], past_key_values_length: int):
