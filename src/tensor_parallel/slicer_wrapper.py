@@ -116,11 +116,18 @@ class Config:
         assert (
             len(list(module.children())) != 0
         ), "Please ensure module is a container (e.g. Sequential), not a single layer"
-        shard = deepcopy(module).to(device)
-        del module
+        source_tensors = dict(chain(module.named_parameters(), module.named_buffers()))
+        substitutes = {
+            id(x): torch.empty([], dtype=x.dtype, device=x.device, requires_grad=x.requires_grad)
+            for x in source_tensors.values()
+        }
+        shard = deepcopy(module, memo=substitutes).to(device)
+        # ^-- note: the memo=... above will replace all parameters and buffers with empty tensors
+        del module, substitutes
 
         # convert parameters and buffers
-        process_state_(shard, config, rank=rank, world_size=world_size)
+        process_state_(shard, source_tensors, config, rank=rank, world_size=world_size)
+        del source_tensors
 
         # convert or wrap intermediate modules
         unique_wrappers = {}
@@ -240,15 +247,26 @@ def create_collective_ops(rules: dict, devices: Sequence[torch.device]):
 
 
 @torch.no_grad()
-def process_state_(module: nn.Module, config: Config, *, rank: int, world_size: int):
-    """Modify module parameters and/or buffers in-place"""
+def process_state_(
+    sharded_module: nn.Module, source_tensors: Dict[str, torch.Tensor], config: Config, *, rank: int, world_size: int
+):
+    """
+    Initialize sharded_module's parameters and buffers by applying prescribed rules to source_module's buffers
+    :param sharded_module: target module that will be modified in-place
+    :param source_tensors: original parameters and buffers on a source device
+    """
     unused_patterns = set(config.state_rules.keys())
-    for name, param in chain(module.named_parameters(), module.named_buffers()):
+    for name, state in chain(sharded_module.named_parameters(), sharded_module.named_buffers()):
         for pattern, action in config.state_rules.items():
             if pattern.search(name) is not None:
-                param.data = apply_action(param.data, action, rank=rank, world_size=world_size).clone()
-                # note: .clone is required so that the resulting parameter owns its storage
+                new_data = apply_action(source_tensors[name], action, rank=rank, world_size=world_size)
                 unused_patterns.discard(pattern)
+                break
+        else:
+            new_data = source_tensors[name]  # copy source parameter as is
+
+        state.data = new_data.clone().detach().to(state.device).requires_grad_(state.requires_grad)
+        # note: .clone is required so that the resulting parameter owns its storage
 
     if unused_patterns:
         logger.warning(f"The following patterns in state_rules were unused: {[str(p) for p in unused_patterns]}")
