@@ -6,8 +6,8 @@ import torch.distributed
 from torch import nn
 from transformers import PreTrainedModel
 
-from tensor_parallel import Sharded
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
+from tensor_parallel.sharding import Sharded
 from tensor_parallel.slicer_wrapper import Config
 from tensor_parallel.tensor_parallel import TensorParallel
 
