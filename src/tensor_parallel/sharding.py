@@ -16,7 +16,7 @@ from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE
 logger = logging.getLogger(__file__)
 
 
-class WithShardedParameters(nn.ModuleList):
+class Sharded(nn.ModuleList):
     def __init__(
         self,
         module: TensorParallel,
@@ -24,7 +24,10 @@ class WithShardedParameters(nn.ModuleList):
         ranks: Optional[Sequence[int]] = None,
         world_size: Optional[int] = None,
     ):
-        """Partition the specified param_names between module shards"""
+        """
+        Wrap a TensorParallel module and partition the specified param_names between shards so that every parameter
+        value is only present on a single device.
+        """
         super().__init__()
         assert isinstance(module, TensorParallel), "expected TensorParallel module"
         self.module = module

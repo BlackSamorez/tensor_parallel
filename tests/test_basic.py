@@ -6,7 +6,7 @@ import torch.nn as nn
 from torch.nn.modules.conv import _ConvTransposeNd
 
 from tensor_parallel import TensorParallel
-from tensor_parallel.sharding import WithShardedParameters
+from tensor_parallel.sharding import Sharded
 
 
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu", "cpu"), ("cpu", "cpu", "cpu")])
@@ -87,7 +87,7 @@ def test_sharding(devices):
         model_tp = TensorParallel(model_tp, device_ids=devices)
         world_size = len(model_tp.module_shards)
         num_params_tp = sum(p.numel() for p in model_tp.parameters())
-        model_tp = WithShardedParameters(model_tp)
+        model_tp = Sharded(model_tp)
         num_params_sharded = sum(p.numel() for p in model_tp.parameters())
         assert num_params_sharded < num_params_tp or world_size == 1
 
