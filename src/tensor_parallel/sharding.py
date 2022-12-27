@@ -1,7 +1,6 @@
 """
 Utility functions for training original model parameters
 """
-import dataclasses
 import functools
 import logging
 import os
@@ -11,7 +10,7 @@ import torch
 from torch import nn
 
 from tensor_parallel import TensorParallel
-from tensor_parallel.cross_device_ops import NCCLAllGatherFunction
+from tensor_parallel.cross_device_ops import all_gather
 from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE
 
 logger = logging.getLogger(__file__)
@@ -20,18 +19,17 @@ logger = logging.getLogger(__file__)
 class WithShardedParameters(nn.ModuleList):
     def __init__(
         self,
-        wrapped_module: TensorParallel,
+        module: TensorParallel,
         sharded_param_names: Optional[Collection[str]] = None,
         ranks: Optional[Sequence[int]] = None,
         world_size: Optional[int] = None,
     ):
         """Partition the specified param_names between module shards"""
         super().__init__()
-        assert isinstance(wrapped_module, TensorParallel), "expected TensorParallel module"
-        assert len(wrapped_module.module_shards) > 1, "please specify several module shards as *args"
-        self.wrapped_module = wrapped_module
+        assert isinstance(module, TensorParallel), "expected TensorParallel module"
+        self.module = module
 
-        module_shards = wrapped_module.module_shards
+        module_shards = module.module_shards
         if len(module_shards) == 1:
             return
         if sharded_param_names is None:
@@ -66,9 +64,9 @@ class WithShardedParameters(nn.ModuleList):
         self._last_versions = None  # to be updated during first forward
 
     def forward(self, *args, **kwargs):
-        if len(self.wrapped_module.module_shards) > 1 and len(self.sharded_param_names) > 0:
+        if len(self.module.module_shards) > 1 and len(self.sharded_param_names) > 0:
             self._maybe_fill_sharded_params()
-        return self.wrapped_module(*args, **kwargs)
+        return self.module(*args, **kwargs)
 
     def _maybe_fill_sharded_params(self):
         shard_versions = tuple(flat_shard._version for flat_shard in self.flat_shards)
@@ -77,7 +75,7 @@ class WithShardedParameters(nn.ModuleList):
             return  # parameters did not change since last all-gather; keep old versions
 
         logger.debug("Re-gathering sharded parameters")
-        gathered_shards = NCCLAllGatherFunction.apply(*self.flat_shards)
+        gathered_shards = all_gather(list(self.flat_shards), all_cuda=self.module.all_cuda)
         for rank, flat_shards, param_occurences in zip(self.ranks, gathered_shards, self.param_occurences_by_rank):
             combined_params = _combine_shards(flat_shards, self._shard_sizes_with_pad, self._sharded_param_shapes)
             assert len(combined_params) == len(param_occurences)

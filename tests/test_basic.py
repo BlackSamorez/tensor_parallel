@@ -6,6 +6,7 @@ import torch.nn as nn
 from torch.nn.modules.conv import _ConvTransposeNd
 
 from tensor_parallel import TensorParallel
+from tensor_parallel.sharding import WithShardedParameters
 
 
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu", "cpu"), ("cpu", "cpu", "cpu")])
@@ -64,3 +65,37 @@ def test_convs(devices, extra_options):
         out_ours.norm().backward()
         assert torch.allclose(ref_out, out_ours, atol=1e-6), abs(ref_out - out_ours).max()
         assert torch.allclose(inputs1.grad, inputs2.grad, atol=1e-5), abs(inputs1.grad - inputs2.grad).max()
+
+
+@pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu", "cpu"), ("cpu", "cpu", "cpu")])
+def test_sharding(devices):
+    for emb_cls in nn.Embedding, nn.EmbeddingBag:
+        model = nn.Sequential(
+            emb_cls(num_embeddings=1337, embedding_dim=64),
+            nn.LayerNorm(64),
+            nn.Linear(64, 128),
+            nn.ReLU(),
+            nn.Linear(128, 10),
+        )
+        num_params_original = sum(p.numel() for p in model.parameters())
+
+        inputs = torch.randint(1, 1000, size=(1, 10))
+        ref_out = model(inputs)
+        ref_out.norm().backward()
+
+        model_tp = deepcopy(model)  # deepcopy to avoid accidental grad spillage and false positives
+        model_tp = TensorParallel(model_tp, device_ids=devices)
+        world_size = len(model_tp.module_shards)
+        num_params_tp = sum(p.numel() for p in model_tp.parameters())
+        model_tp = WithShardedParameters(model_tp)
+        num_params_sharded = sum(p.numel() for p in model_tp.parameters())
+        assert num_params_sharded < num_params_tp or world_size == 1
+
+        padding_params = 0 if world_size < 3 else 4
+        assert num_params_sharded == num_params_original + padding_params
+
+        out_ours = model_tp(inputs)
+        out_ours.norm().backward()
+        assert torch.allclose(ref_out, out_ours, atol=1e-6)
+        our_grad = torch.cat([next(shard[0].parameters()).grad for shard in model_tp.module.module_shards], dim=1)
+        assert torch.allclose(model[0].weight.grad, our_grad, atol=1e-6)
