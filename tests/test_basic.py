@@ -27,9 +27,9 @@ def test_embeds_and_linear(devices):
         model_tp = TensorParallel(model_tp, device_ids=devices)
         out_ours = model_tp(inputs)
         out_ours.norm().backward()
-        assert torch.allclose(ref_out, out_ours, atol=1e-6)
+        torch.testing.assert_close(ref_out, out_ours, atol=1e-6, rtol=1e-05)
         our_grad = torch.cat([next(shard[0].parameters()).grad for shard in model_tp.module_shards], dim=1)
-        assert torch.allclose(model[0].weight.grad, our_grad, atol=1e-6)
+        torch.testing.assert_close(model[0].weight.grad, our_grad, atol=1e-6, rtol=1e-05)
 
 
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu",) * 2, ("cpu",) * 3, ("cpu",) * 4])
@@ -62,8 +62,9 @@ def test_convs(devices, extra_options):
         model_tp = TensorParallel(model_tp, device_ids=devices)
         out_ours = model_tp(inputs2)
         out_ours.norm().backward()
-        assert torch.allclose(ref_out, out_ours, atol=1e-6), abs(ref_out - out_ours).max()
-        assert torch.allclose(inputs1.grad, inputs2.grad, atol=1e-5), abs(inputs1.grad - inputs2.grad).max()
+        torch.testing.assert_close(ref_out, out_ours, atol=1e-6, rtol=1e-05)
+        torch.testing.assert_close(inputs1.grad, inputs2.grad, atol=1e-5, rtol=1e-05)
+
 
 
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu", "cpu"), ("cpu", "cpu", "cpu")])
@@ -95,6 +96,6 @@ def test_sharding(devices):
 
         out_ours = model_tp(inputs)
         out_ours.norm().backward()
-        assert torch.allclose(ref_out, out_ours, atol=1e-6)
+        torch.assert_close(ref_out, out_ours, atol=1e-6, rtol=1e-05)
         our_grad = torch.cat([next(shard[0].parameters()).grad for shard in model_tp.module.module_shards], dim=1)
-        assert torch.allclose(model[0].weight.grad, our_grad, atol=1e-6)
+        torch.assert_close(model[0].weight.grad, our_grad, atol=1e-6, rtol=1e-05)
