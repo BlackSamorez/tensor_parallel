@@ -5,8 +5,7 @@ import torch
 import torch.nn as nn
 from torch.nn.modules.conv import _ConvTransposeNd
 
-from tensor_parallel import TensorParallel
-from tensor_parallel.sharding import Sharded
+from tensor_parallel import Sharded, TensorParallel
 
 
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu", "cpu"), ("cpu", "cpu", "cpu")])
