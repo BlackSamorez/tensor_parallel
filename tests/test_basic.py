@@ -66,7 +66,6 @@ def test_convs(devices, extra_options):
         torch.testing.assert_close(inputs1.grad, inputs2.grad, atol=1e-5, rtol=1e-05)
 
 
-
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu", "cpu"), ("cpu", "cpu", "cpu")])
 def test_sharding(devices):
     for emb_cls in nn.Embedding, nn.EmbeddingBag:
