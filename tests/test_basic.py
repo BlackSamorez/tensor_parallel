@@ -95,6 +95,6 @@ def test_sharding(devices):
 
         out_ours = model_tp(inputs)
         out_ours.norm().backward()
-        torch.assert_close(ref_out, out_ours, atol=1e-6, rtol=1e-05)
+        torch.testing.assert_close(ref_out, out_ours, atol=1e-6, rtol=1e-05)
         our_grad = torch.cat([next(shard[0].parameters()).grad for shard in model_tp.module.module_shards], dim=1)
-        torch.assert_close(model[0].weight.grad, our_grad, atol=1e-6, rtol=1e-05)
+        torch.testing.assert_close(model[0].weight.grad, our_grad, atol=1e-6, rtol=1e-05)

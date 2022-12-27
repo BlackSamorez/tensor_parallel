@@ -1,10 +1,12 @@
+import pytest
 import torch.nn as nn
 import transformers
 
 from tensor_parallel import TensorParallel, tensor_parallel
 
 
-def test_factory_nn_module():
+@pytest.mark.parametrize("sharded", [True, False])
+def test_factory_nn_module(sharded):
     model = nn.Sequential(
         nn.Embedding(num_embeddings=1337, embedding_dim=64),
         nn.LayerNorm(64),
@@ -14,8 +16,8 @@ def test_factory_nn_module():
     )
 
     assert isinstance(model, nn.Module)
-    model = tensor_parallel(model, device_ids=["cpu", "cpu"])
-    assert isinstance(model, TensorParallel)
+    model = tensor_parallel(model, device_ids=["cpu", "cpu"], sharded=sharded)
+    assert isinstance(model, TensorParallel) if not sharded else isinstance(model.module, TensorParallel)
 
 
 def test_factory_pretrainedmodel():
