@@ -77,7 +77,7 @@ class Sharded(nn.ModuleList):
             logger.debug("Using previously gathered parameters")
             return  # parameters did not change since last all-gather; keep old versions
 
-        logger.debug("Re-gathering sharded parameters")
+        logger.debug("Gathering sharded parameters")
         gathered_shards = all_gather(list(self.flat_shards), all_cuda=self.module.all_cuda)
         for rank, flat_shards, param_occurences in zip(self.ranks, gathered_shards, self.param_occurences_by_rank):
             combined_params = _combine_shards(flat_shards, self._shard_sizes_with_pad, self._sharded_param_shapes)
