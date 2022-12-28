@@ -52,7 +52,7 @@ class Sharded(nn.ModuleList):
         }
         self._sharded_param_shapes = [all_param_shapes[name] for name in sharded_param_names]
         flat_shards, shard_sizes_with_pad = _make_flat_shards(sharded_param_names, module_shards, ranks, world_size)
-        self.flat_shards = nn.ParameterList(flat_shards)
+        self.flat_shards = nn.ParameterList(list(map(nn.Parameter, flat_shards)))
         self._shard_sizes_with_pad = shard_sizes_with_pad
 
         # prepare a list of all module-parameter pairs affected by sharding
@@ -160,6 +160,7 @@ def _find_all_occurences(model: nn.Module, param_names: Sequence[str]) -> Sequen
     return tuple(param_occurences[name] for name in param_names)
 
 
+@torch.no_grad()
 def _make_flat_shards(
     sharded_param_names: Sequence[str], module_shards: Sequence[nn.Module], ranks: Sequence[int], world_size: int
 ) -> Tuple[List[torch.Tensor], List[List[int]]]:
