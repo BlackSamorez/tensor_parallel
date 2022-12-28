@@ -35,6 +35,8 @@ def find_predefined_tensor_parallel_config(
 
 
 class TensorParallelPreTrainedModel(PreTrainedModel):
+    is_parallelizable = model_parallel = True
+
     def __init__(
         self,
         module: PreTrainedModel,
