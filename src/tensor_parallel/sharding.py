@@ -62,7 +62,7 @@ class Sharded(nn.ModuleList):
         for param_occurences in self.param_occurences_by_rank:
             for occurences in param_occurences:
                 for submodule, param_name in occurences:
-                    assert param_name in submodule._parameters
+                    submodule._parameters.pop(param_name, None)
                     setattr(submodule, param_name, None)
         self._last_versions = None  # to be updated during first forward
 
@@ -84,8 +84,7 @@ class Sharded(nn.ModuleList):
             assert len(combined_params) == len(param_occurences)
             for new_value, occurences in zip(combined_params, param_occurences):
                 for submodule, param_name in occurences:
-                    assert param_name in submodule._parameters
-                    submodule._parameters[param_name] = new_value
+                    setattr(submodule, param_name, new_value)
         self._last_versions = tuple(flat_shard._version for flat_shard in self.flat_shards)
 
 
