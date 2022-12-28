@@ -50,20 +50,20 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
         if config is None:
             config = find_predefined_tensor_parallel_config(module.config, device_ids)
 
-        self.tensor_parallel = TensorParallel(module, device_ids, output_device, output_device_index, config)
+        self.wrapped_model = TensorParallel(module, device_ids, output_device, output_device_index, config)
 
     def forward(self, *args, **kwargs):
-        return self.tensor_parallel(*args, **kwargs)
+        return self.wrapped_model(*args, **kwargs)
 
     def _validate_model_class(self):
-        return self.tensor_parallel.module_shards[0]._validate_model_class()
+        return self.wrapped_model.module_shards[0]._validate_model_class()
 
     def _validate_model_kwargs(self, model_kwargs: Dict[str, Any]):
-        return self.tensor_parallel.module_shards[0]._validate_model_kwargs(model_kwargs)
+        return self.wrapped_model.module_shards[0]._validate_model_kwargs(model_kwargs)
 
     def prepare_inputs_for_generation(self, *args, **kwargs):
-        return self.tensor_parallel.module_shards[0].prepare_inputs_for_generation(*args, **kwargs)
+        return self.wrapped_model.module_shards[0].prepare_inputs_for_generation(*args, **kwargs)
 
     def _reorder_cache(self, past, beam_idx):
-        for shard in self.tensor_parallel.module_shards:
+        for shard in self.wrapped_model.module_shards:
             shard._reorder_cache(past, beam_idx)
