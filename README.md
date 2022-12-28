@@ -10,14 +10,13 @@ model = transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
 
 model = tp.tensor_parallel(model, ["cuda:0", "cuda:1"])  # <- each GPU holds half of the weights
 
-# .. and then you can use the model normally!
 inputs = tokenizer("A cat sat", return_tensors="pt")["input_ids"].to("cuda:0")
 outputs = model.generate(inputs, num_beams=5)
 print(tokenizer.decode(outputs[0]))  # A cat sat on my lap for a few minutes.
 
-loss = model(input_ids=inputs, labels=inputs).loss
-loss.backward()
+model(input_ids=inputs, labels=inputs).loss.backward()
 ```
+
 
 ## Examples:
 
@@ -37,11 +36,15 @@ pip install https://github.com/BlackSamorez/tensor_parallel/archive/main.zip
 ## FAQ
 
 - __Q:__ I don't have a multi-GPU server. Can I use tensor_parallel in Google Colab?
-  - __A:__ Colab has a single GPU, but [Kaggle offers two T4 for free](https://www.kaggle.com/code/muellerzr/multi-gpu-and-accelerate) to all phone-verified accounts
+- __A:__ Colab has a single GPU, but [Kaggle offers two T4 for free](https://www.kaggle.com/code/muellerzr/multi-gpu-and-accelerate) to all phone-verified accounts
+
+
 - __Q:__ Should I use `TensorParallel` or `DataParallel`?
-  - __A:__ TensorParallel for large models, DataParallel for smaller ones
+- __A:__ TensorParallel for large models, DataParallel for smaller ones
+
+
 - __Q:__ How does it compare against FullyShardedDataParallel and ZeRO?
-  - __A:__ ZeRO is better if you can fit a large batch, TensorParallel is better for small batches
+- __A:__ ZeRO is better if you can fit a large batch, TensorParallel is better for small batches
 
 Why use `tensor_parallel` ...
 - v.s. [DeepSpeed](https://github.com/microsoft/DeepSpeed)
