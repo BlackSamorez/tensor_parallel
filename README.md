@@ -12,9 +12,9 @@ model = tp.tensor_parallel(model, ["cuda:0", "cuda:1"])  # <- each GPU holds hal
 
 inputs = tokenizer("A cat sat", return_tensors="pt")["input_ids"].to("cuda:0")
 outputs = model.generate(inputs, num_beams=5)
-print(tokenizer.decode(outputs[0]))  # A cat sat on my lap for a few minutes.
+print(tokenizer.decode(outputs[0]))  # A cat sat on my lap for a few minutes
 
-model(input_ids=inputs, labels=inputs).loss.backward()
+model(input_ids=inputs, labels=inputs).loss.backward()  # train it normally
 ```
 
 
