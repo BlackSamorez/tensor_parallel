@@ -63,7 +63,7 @@ class Sharded(nn.ModuleList):
             for occurences in param_occurences:
                 for submodule, param_name in occurences:
                     assert param_name in submodule._parameters
-                    submodule._parameters[param_name] = None
+                    setattr(submodule, param_name, None)
         self._last_versions = None  # to be updated during first forward
 
     def forward(self, *args, **kwargs):
