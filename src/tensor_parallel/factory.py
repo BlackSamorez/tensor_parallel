@@ -31,7 +31,7 @@ def tensor_parallel(
     >>> import torch, transformers
     >>> import tensor_parallel as tp
     >>> model = transformers.AutoModel.from_pretrained("t5-11b")
-    >>> model = tp.wrapped_model(model, device_ids=['cuda:0', 'cuda:1'])
+    >>> model = tp.tensor_parallel(model, device_ids=['cuda:0', 'cuda:1'])
     >>> outputs_as_usual = model(**inputs_as_usual)  # backprop also works!
 
     :param module: original PyTorch module. We recommend storing input module on CPU to minimize GPU memory
