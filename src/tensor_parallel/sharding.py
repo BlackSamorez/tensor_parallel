@@ -87,6 +87,10 @@ class Sharded(nn.ModuleList):
                     setattr(submodule, param_name, new_value)
         self._last_versions = tuple(flat_shard._version for flat_shard in self.flat_shards)
 
+    @property
+    def module_shards(self):
+        return self.module.module_shards
+
 
 @torch.no_grad()
 def find_replicated_parameters(*module_shards: nn.Module, only_trainable: bool) -> Set[str]:
