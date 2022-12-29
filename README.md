@@ -1,9 +1,8 @@
-# tensor_parallel
-[![PyPI version](https://img.shields.io/pypi/v/tensor-parallel.svg?color=blue)](https://pypi.org/project/hivemind/)
+# tensor_parallel [![PyPI version](https://img.shields.io/pypi/v/tensor-parallel.svg?color=blue)](https://pypi.org/project/hivemind/)
 [![Black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 [![CI status](https://github.com/BlackSamorez/tensor_parallel/actions/workflows/run-tests.yaml/badge.svg?branch=main)](https://github.com/BlackSamorez/tensor_parallel/actions)
 
-Run your PyTorch model on multiple GPUs with one extra line of code.
+Run large PyTorch models on multiple GPUs in one line of code.
 
 ```python
 import transformers
