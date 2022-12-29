@@ -76,7 +76,7 @@ def tensor_parallel(
 def _maybe_sharded(
     module: TensorParallel, sharded: Optional[bool], model_size: int, **kwargs
 ) -> Union[Sharded, TensorParallel]:
-    """Teremines if sharding is necessary, returns either Sharded(module) or module itself, if unchanged"""
+    """Determines if sharding is necessary, returns either Sharded(module) or module itself, if unchanged"""
     determined_automatically = sharded is None
     if sharded is None:
         model_size_after_tp = sum(p.numel() for p in module.parameters() if p.requires_grad)
