@@ -1,6 +1,6 @@
 # tensor_parallel
 
-Split your PyTorch model between multiple GPUs in one line of code. Doesn't require PhD in DeepSpeed configuration.
+Run your PyTorch model on multiple GPUs with one extra line of code.
 
 ```python
 import transformers
