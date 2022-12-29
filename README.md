@@ -8,15 +8,14 @@ Run large PyTorch models on multiple GPUs in one line of code.
 ```python
 import transformers
 import tensor_parallel as tp
-model_name = "facebook/opt-13b" # or "facebook/opt-125m" for a quick test
-tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
-model = transformers.AutoModelForCausalLM.from_pretrained(model_name)
+tokenizer = transformers.AutoTokenizer.from_pretrained("facebook/opt-13b")
+model = transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-13b")  # use opt-125m for testing
 
 model = tp.tensor_parallel(model, ["cuda:0", "cuda:1"])  # <- each GPU has half the weights
 
 inputs = tokenizer("A cat sat", return_tensors="pt")["input_ids"].to("cuda:0")
 outputs = model.generate(inputs, num_beams=5)
-print(tokenizer.decode(outputs[0]))  # A cat sat on my lap for a few minutes ...
+print(tokenizer.decode(outputs[0])) # A cat sat on my lap for a few minutes ...
 
 model(input_ids=inputs, labels=inputs).loss.backward()  # training works as usual
 ```
@@ -35,11 +34,12 @@ pip install https://github.com/BlackSamorez/tensor_parallel/archive/main.zip
 ## Usage
 
 
-Simply wrap your PyTorch model with `tp.tensor_parallel` and use it normally. Here's a few exampels:
+Simply wrap your PyTorch model with `tp.tensor_parallel` and use it normally.
+For best memory efficiency, call `tp.tensor_parallel` while the model is still on CPU.  
 
+Here's a few use cases:
 - [`examples/training_flan-t5-xl.ipynb`](./examples/training_flan-t5-xl.ipynb) - fine-tune full FLAN-T5 model on text summarization
-- __TBA__ - inferencing a large language model
-    - TL;DR take the [basic example](#tensor_parallel) and replace `facebook/opt-125m` with `facebook/opt-13b`  
+- __TBA__ - inferencing a large language model with LLM.8bit + tensor_parallel
 - __TBA__ - defining custom parallelism strategy
 
 
@@ -53,7 +53,7 @@ Advanced parameters to `tensor_parallel`:
    - TL;DR use this when training to avoid duplicate parameters (enabled by default!) 
    - `sharded_param_names: List[str]` - parameter names that should be sharded this way, default = found automatically
 
-
+  
 ## FAQ
 
 - __Q:__ I don't have a multi-GPU server. Can I use tensor_parallel in Google Colab?
@@ -95,6 +95,17 @@ Why use `tensor_parallel` ...
 
 In short, use `tensor_parallel` for quick prototyping on a single machine.
 Use DeepSpeed+Megatron or alpa for million-dollar training runs.
+
+
+## Troubleshooting
+
+If you experience NCCL errors, or random hanging, you may have some code errors that are not displayed properly. 
+To debug these errors, we recommend restarting with `export TENSOR_PARALLEL_USE_NATIVE=1` or a on single device. 
+
+If you found a bug or encountered a problem, please report it to [our issue tracker](https://github.com/BlackSamorez/tensor_parallel/issues).
+We will do our best to help, but it may take some time before we get to it.
+Please create issues only if your problem is specifically with `tensor_parallel`.
+For example, if you need help installing `transformers` or optimizing your code, please seek it elsewhere.
 
 ### Code style
 
