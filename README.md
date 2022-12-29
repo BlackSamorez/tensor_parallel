@@ -10,7 +10,7 @@ import tensor_parallel as tp
 tokenizer = transformers.AutoTokenizer.from_pretrained("facebook/opt-125m")
 model = transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
 
-model = tp.tensor_parallel(model, ["cuda:0", "cuda:1"])  # <- each GPU holds half of the weights
+model = tp.tensor_parallel(model, ["cuda:0", "cuda:1"])  # <- each GPU has half the weights
 
 inputs = tokenizer("A cat sat", return_tensors="pt")["input_ids"].to("cuda:0")
 outputs = model.generate(inputs, num_beams=5)
