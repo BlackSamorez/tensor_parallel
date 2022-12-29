@@ -21,7 +21,7 @@ def tensor_parallel(
     distributed: Optional[bool] = None,
     sharded: Optional[bool] = None,
     sharded_param_names: Optional[bool] = None,
-    **kwargs
+    **kwargs,
 ) -> nn.Module:
     """
     Wrap an existing PyTorch module with tensor parallelism. Return equivalent tensor-parallel module.
@@ -47,7 +47,9 @@ def tensor_parallel(
     :param kwargs: additional keyword arguments passed to TensorParallel init
 
     """
+    num_trainable_parameters = sum(p.numel() for p in module.parameters() if p.requires_grad)
     distributed = distributed if distributed is not None else torch.distributed.is_initialized()
+
     if distributed:
         if device_ids is None:
             device_ids = [torch.device("cuda" if torch.cuda.is_available() else "cpu")]
@@ -59,16 +61,32 @@ def tensor_parallel(
 
         return config.make_distributed_shard(module, device=torch.device(device_ids[0]), **kwargs)
     else:
-        if sharded is None:
-            sharded = any(p.requires_grad for p in module.parameters())
-            if sharded:
-                logger.warning("Using ZeRO-3 sharding for remaining parameters")
         if isinstance(module, PreTrainedModel):
             module = TensorParallelPreTrainedModel(module, device_ids=device_ids, config=config, **kwargs)
-            if sharded:
-                module.tensor_parallel = Sharded(module.tensor_parallel, sharded_param_names=sharded_param_names)
+            module.wrapped_model = _maybe_sharded(
+                module.wrapped_model, sharded, num_trainable_parameters, sharded_param_names=sharded_param_names
+            )
         else:
             module = TensorParallel(module, device_ids=device_ids, config=config, **kwargs)
-            if sharded:
-                module = Sharded(module, sharded_param_names=sharded_param_names)
+            module = _maybe_sharded(module, sharded, num_trainable_parameters, sharded_param_names=sharded_param_names)
+
         return module
+
+
+def _maybe_sharded(
+    module: TensorParallel, sharded: Optional[bool], num_trainable_parameters: int, **kwargs
+) -> Union[Sharded, TensorParallel]:
+    """Determines if sharding is necessary, returns either Sharded(module) or module itself, if unchanged"""
+    determined_automatically = sharded is None
+    if sharded is None:
+        num_trainable_parameters_after_tp = sum(p.numel() for p in module.parameters() if p.requires_grad)
+        assert num_trainable_parameters_after_tp >= num_trainable_parameters
+        sharded = num_trainable_parameters_after_tp > num_trainable_parameters
+        # use sharding if there are some *trainable* parameter that are replicated on more than one device
+
+        if sharded and determined_automatically:
+            num_extra_parameters = num_trainable_parameters_after_tp - num_trainable_parameters
+            replicated_parameters = num_extra_parameters // max(1, len(module.devices) - 1)
+            logger.warning(f"Using ZeRO-3 sharding for {replicated_parameters} non tensor-parallel parameters")
+
+    return Sharded(module, **kwargs) if sharded else module

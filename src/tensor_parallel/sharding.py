@@ -52,7 +52,7 @@ class Sharded(nn.ModuleList):
         }
         self._sharded_param_shapes = [all_param_shapes[name] for name in sharded_param_names]
         flat_shards, shard_sizes_with_pad = _make_flat_shards(sharded_param_names, module_shards, ranks, world_size)
-        self.flat_shards = nn.ParameterList(flat_shards)
+        self.flat_shards = nn.ParameterList(list(map(nn.Parameter, flat_shards)))
         self._shard_sizes_with_pad = shard_sizes_with_pad
 
         # prepare a list of all module-parameter pairs affected by sharding
@@ -62,8 +62,8 @@ class Sharded(nn.ModuleList):
         for param_occurences in self.param_occurences_by_rank:
             for occurences in param_occurences:
                 for submodule, param_name in occurences:
-                    assert param_name in submodule._parameters
-                    submodule._parameters[param_name] = None
+                    submodule._parameters.pop(param_name, None)
+                    setattr(submodule, param_name, None)
         self._last_versions = None  # to be updated during first forward
 
     def forward(self, *args, **kwargs):
@@ -84,9 +84,12 @@ class Sharded(nn.ModuleList):
             assert len(combined_params) == len(param_occurences)
             for new_value, occurences in zip(combined_params, param_occurences):
                 for submodule, param_name in occurences:
-                    assert param_name in submodule._parameters
-                    submodule._parameters[param_name] = new_value
+                    setattr(submodule, param_name, new_value)
         self._last_versions = tuple(flat_shard._version for flat_shard in self.flat_shards)
+
+    @property
+    def module_shards(self):
+        return self.module.module_shards
 
 
 @torch.no_grad()
@@ -160,6 +163,7 @@ def _find_all_occurences(model: nn.Module, param_names: Sequence[str]) -> Sequen
     return tuple(param_occurences[name] for name in param_names)
 
 
+@torch.no_grad()
 def _make_flat_shards(
     sharded_param_names: Sequence[str], module_shards: Sequence[nn.Module], ranks: Sequence[int], world_size: int
 ) -> Tuple[List[torch.Tensor], List[List[int]]]:
