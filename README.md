@@ -37,6 +37,7 @@ Simply wrap your PyTorch model with `tp.tensor_parallel` and use it normally. He
 
 - [`examples/training_flan-t5-xl.ipynb`](./examples/training_flan-t5-xl.ipynb) - fine-tune full FLAN-T5 model on text summarization
 - __TBA__ - inferencing a large language model
+    - TL;DR read the top example again, but replace `facebook/opt-125m` with `facebook/opt-13b`  
 - __TBA__ - defining custom parallelism strategy
 
 
