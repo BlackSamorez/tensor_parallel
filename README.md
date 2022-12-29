@@ -41,7 +41,7 @@ Simply wrap your PyTorch model with `tp.tensor_parallel` and use it normally. He
 Advanced parameters to `tensor_parallel`:
 - `device_ids: List[device]` - which devices to use; defaults to all available GPUs
 - `output_device: device` - model outputs will have this device
-- `config: tp.Config` - use custom parallelism strategy, see [`./tensor_parallel/slicing_configs.py`](./tensor_parallel/slicing_configs.py)
+- `config: tp.Config` - use custom parallelism strategy, see [`slicing_configs.py`](./tensor_parallel/slicing_configs.py)
 - `distributed: bool` - if True, use torch.distributed backend instead of threading (requires `torchrun`)
 - `sharded: bool` - if True, find all trainable parameters that weren't split by Tensor Parallelism and split them using [ZeRO-3 algorithm](https://deepspeed.readthedocs.io/en/latest/zero3.html).
    - weights will be split between GPUs and re-assembled before each forward pass
@@ -52,11 +52,11 @@ Advanced parameters to `tensor_parallel`:
 ## FAQ
 
 - __Q:__ I don't have a multi-GPU server. Can I use tensor_parallel in Google Colab?
-- __A:__ Colab has a single GPU, but [Kaggle offers two T4 for free](https://www.kaggle.com/code/muellerzr/multi-gpu-and-accelerate) to all phone-verified accounts
+- __A:__ Colab has a single GPU, so there's no point in tensor parallelism. However, [Kaggle offers two T4 for free](https://www.kaggle.com/code/muellerzr/multi-gpu-and-accelerate) to all phone-verified accounts.
 
 
 - __Q:__ What is tensor parallelism?
-- __A:__ You split each layer's weights into parts, multiply each part on a separate GPU, then gather results. Read more [here](https://huggingface.co/transformers/v4.9.0/parallelism.html).
+- __A:__ You split each layer's weights into parts, multiply each part on a separate GPU, then gather results. Read more [here](https://colossalai.org/docs/concepts/paradigms_of_parallelism/)
  
 
 - __Q:__ Should I use `TensorParallel` or `DataParallel`?
@@ -70,7 +70,7 @@ Advanced parameters to `tensor_parallel`:
 Why use `tensor_parallel` ...
 - v.s. [DeepSpeed](https://github.com/microsoft/DeepSpeed) and [FairScale](https://github.com/facebookresearch/fairscale/)
   - DeepSpeed has many parallelization strategies, but requires careful configuration
-  - tensor_parallel has one strategy, but it works with 1 line of code
+  - tensor_parallel has one strategy that works with 1 line of code
   - tensor_parallel works in a jupyter notebook
 - v.s. [MegatronLM](https://github.com/NVIDIA/Megatron-LM)?
   - MegatronLM has _great_ tensor parallelism for one model architecture
