@@ -8,16 +8,17 @@ Run large PyTorch models on multiple GPUs in one line of code.
 ```python
 import transformers
 import tensor_parallel as tp
-tokenizer = transformers.AutoTokenizer.from_pretrained("facebook/opt-125m")
-model = transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-125m")
+model_name = "facebook/opt-13b" # or "facebook/opt-125m" for a quick test
+tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
+model = transformers.AutoModelForCausalLM.from_pretrained(model_name)
 
 model = tp.tensor_parallel(model, ["cuda:0", "cuda:1"])  # <- each GPU has half the weights
 
 inputs = tokenizer("A cat sat", return_tensors="pt")["input_ids"].to("cuda:0")
 outputs = model.generate(inputs, num_beams=5)
-print(tokenizer.decode(outputs[0]))  # A cat sat on my lap for a few minutes
+print(tokenizer.decode(outputs[0]))  # A cat sat on my lap for a few minutes ...
 
-model(input_ids=inputs, labels=inputs).loss.backward()  # train it normally
+model(input_ids=inputs, labels=inputs).loss.backward()  # training works as usual
 ```
 
 ## Installation
