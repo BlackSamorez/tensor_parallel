@@ -50,6 +50,17 @@ def reduce_add(tensors: Sequence[torch.Tensor], destination: Optional[torch.devi
     return _ReduceAdd.apply(destination, *tensors)
 
 
+def all_gather(tensors: Sequence[torch.Tensor], all_cuda: bool = None) -> Sequence[torch.Tensor]:
+    """Perform AllGather on tensors, return stacked tensors on each device; differentiable w.r.t. input tensors"""
+    if all_cuda is None:
+        all_cuda = all(x.device.type == "cuda" for x in tensors)
+    if all_cuda and nccl.is_available(tensors):
+        return NCCLAllGatherFunction.apply(*tensors)
+    else:
+        tensors = tuple(x[None, ...] for x in tensors)  # un-squeeze so that gather(concat) performs stacking
+        return tuple(gather(tensors, dim=0, destination=output.device, all_cuda=all_cuda) for output in tensors)
+
+
 class _ReduceAdd(torch.autograd.Function):
     @staticmethod
     def forward(ctx, destination: torch.device, *tensors: torch.Tensor):

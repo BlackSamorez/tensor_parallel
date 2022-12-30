@@ -33,10 +33,10 @@ def test_bloom_inference(use_config, devices, model_name="bigscience/bloom-560m"
     out2 = model_tp(inp2, use_cache=True, past_key_values=out1.past_key_values)
     out3 = model_tp(inp3, use_cache=True, past_key_values=out2.past_key_values)
 
-    assert torch.allclose(out1_ref.hidden_states[-1], out1.hidden_states[-1], atol=3e-3)
-    assert torch.allclose(out1_ref.logits, out1.logits, atol=3e-3)
-    assert torch.allclose(out2_ref.logits, out2.logits, atol=3e-3)
-    assert torch.allclose(out3_ref.logits, out3.logits, atol=3e-3)
+    torch.testing.assert_close(out1_ref.hidden_states[-1], out1.hidden_states[-1], atol=3e-3, rtol=1e-05)
+    torch.testing.assert_close(out1_ref.logits, out1.logits, atol=3e-3, rtol=1e-05)
+    torch.testing.assert_close(out2_ref.logits, out2.logits, atol=3e-3, rtol=1e-05)
+    torch.testing.assert_close(out3_ref.logits, out3.logits, atol=3e-3, rtol=1e-05)
 
 
 @pytest.mark.parametrize("num_beams", [1, 3])

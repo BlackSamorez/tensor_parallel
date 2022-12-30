@@ -30,12 +30,14 @@ def find_predefined_tensor_parallel_config(
         return PREDEFINED_CONFIGS[model_config.architectures[0]](model_config, device_ids)
     except KeyError:
         logger.warning(
-            "Using automatic config: no tensor parallel config provided and no predefined configs can be used"
+            "Using automatic config: tensor parallel config not provided and no custom config registered for the model"
         )
         return None
 
 
 class TensorParallelPreTrainedModel(PreTrainedModel):
+    is_parallelizable = model_parallel = True
+
     def __init__(
         self,
         module: PreTrainedModel,
@@ -49,7 +51,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
         if config is None:
             config = find_predefined_tensor_parallel_config(module.config, device_ids)
 
-        self.tensor_parallel = TensorParallel(module, device_ids, output_device, output_device_index, config)
+        self.wrapped_model = TensorParallel(module, device_ids, output_device, output_device_index, config)
 
         self.encoder_shards = nn.ModuleList()
         if module.config.is_encoder_decoder:
@@ -57,19 +59,19 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
                 self.encoder_shards.append(encoder_decoder_shard.get_encoder())
 
     def forward(self, *args, **kwargs):
-        return self.tensor_parallel(*args, **kwargs)
+        return self.wrapped_model(*args, **kwargs)
 
     def _validate_model_class(self):
-        return self.tensor_parallel.module_shards[0]._validate_model_class()
+        return self.wrapped_model.module_shards[0]._validate_model_class()
 
     def _validate_model_kwargs(self, model_kwargs: Dict[str, Any]):
-        return self.tensor_parallel.module_shards[0]._validate_model_kwargs(model_kwargs)
+        return self.wrapped_model.module_shards[0]._validate_model_kwargs(model_kwargs)
 
     def prepare_inputs_for_generation(self, *args, **kwargs):
-        return self.tensor_parallel.module_shards[0].prepare_inputs_for_generation(*args, **kwargs)
+        return self.wrapped_model.module_shards[0].prepare_inputs_for_generation(*args, **kwargs)
 
     def _reorder_cache(self, past, beam_idx):
-        for shard in self.tensor_parallel.module_shards:
+        for shard in self.wrapped_model.module_shards:
             shard._reorder_cache(past, beam_idx)
 
     def get_encoder(self):
