@@ -9,6 +9,7 @@ import transformers
 from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
 
+from tensor_parallel.sharding import Sharded
 from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE, Config
 from tensor_parallel.slicing_configs import PREDEFINED_CONFIGS
 from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids, parallel_apply, parallel_apply_simple
@@ -79,29 +80,70 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
         if len(self.wrapped_model.module_shards) == 1:
             return self.wrapped_model.module_shards[0].get_encoder()
 
-        class _EncoderWrapper(torch.nn.Module):
-            def __init__(self, wrapped_pretrained_model: TensorParallelPreTrainedModel) -> None:
-                super().__init__()
-                self.wrapped_pretrained_model = wrapped_pretrained_model
+        encoder_wrapper_class = None
+        if isinstance(self.wrapped_model, TensorParallel):
 
-            def forward(self, *args, **kwargs):
-                (
-                    inputs,
-                    kwargs_tup,
-                ) = self.wrapped_pretrained_model.wrapped_model.prepare_args_kwargs_for_forward(*args, **kwargs)
-                if self.wrapped_pretrained_model.wrapped_model.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
-                    return parallel_apply(
-                        self.wrapped_pretrained_model.encoder_shards,
+            class _EncoderWrapper(torch.nn.Module):
+                def __init__(self, wrapped_pretrained_model: TensorParallelPreTrainedModel) -> None:
+                    super().__init__()
+                    self.wrapped_pretrained_model = wrapped_pretrained_model
+
+                def forward(self, *args, **kwargs):
+                    (
                         inputs,
                         kwargs_tup,
-                        self.wrapped_pretrained_model.wrapped_model.devices,
-                    )[self.wrapped_pretrained_model.wrapped_model.output_device_index]
-                else:
-                    return parallel_apply_simple(
-                        self.wrapped_pretrained_model.encoder_shards,
+                    ) = self.wrapped_pretrained_model.wrapped_model.prepare_args_kwargs_for_forward(*args, **kwargs)
+                    if self.wrapped_pretrained_model.wrapped_model.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
+                        return parallel_apply(
+                            self.wrapped_pretrained_model.encoder_shards,
+                            inputs,
+                            kwargs_tup,
+                            self.wrapped_pretrained_model.wrapped_model.devices,
+                        )[self.wrapped_pretrained_model.wrapped_model.output_device_index]
+                    else:
+                        return parallel_apply_simple(
+                            self.wrapped_pretrained_model.encoder_shards,
+                            inputs,
+                            kwargs_tup,
+                            self.wrapped_pretrained_model.wrapped_model.devices,
+                        )[self.wrapped_pretrained_model.wrapped_model.output_device_index]
+
+            return _EncoderWrapper()
+
+        elif isinstance(self.wrapped_model, Sharded):
+
+            class _EncoderWrapper(torch.nn.Module):
+                def __init__(self, wrapped_pretrained_model: TensorParallelPreTrainedModel) -> None:
+                    super().__init__()
+                    self.wrapped_pretrained_model = wrapped_pretrained_model
+
+                def forward(self, *args, **kwargs):
+                    if (
+                        len(self.wrapped_pretrained_model.wrapped_model.module.module_shards) > 1
+                        and len(self.wrapped_pretrained_model.wrapped_model.sharded_param_names) > 0
+                    ):
+                        self.wrapped_pretrained_model.wrapped_model._maybe_fill_sharded_params()
+                    (
                         inputs,
                         kwargs_tup,
-                        self.wrapped_pretrained_model.wrapped_model.devices,
-                    )[self.wrapped_pretrained_model.wrapped_model.output_device_index]
+                    ) = self.wrapped_pretrained_model.wrapped_model.module.prepare_args_kwargs_for_forward(
+                        *args, **kwargs
+                    )
+                    if self.wrapped_pretrained_model.wrapped_model.module.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
+                        return parallel_apply(
+                            self.wrapped_pretrained_model.encoder_shards,
+                            inputs,
+                            kwargs_tup,
+                            self.wrapped_pretrained_model.wrapped_model.module.devices,
+                        )[self.wrapped_pretrained_model.wrapped_model.module.output_device_index]
+                    else:
+                        return parallel_apply_simple(
+                            self.wrapped_pretrained_model.encoder_shards,
+                            inputs,
+                            kwargs_tup,
+                            self.wrapped_pretrained_model.wrapped_model.module.devices,
+                        )[self.wrapped_pretrained_model.wrapped_model.module.output_device_index]
 
-        return _EncoderWrapper(self)
+            encoder_wrapper_class = _EncoderWrapper
+
+        return encoder_wrapper_class(self)

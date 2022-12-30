@@ -108,11 +108,18 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
             r".*DenseReluDense\.wi_1\.(weight|bias)": "split 0",
             r".*DenseReluDense\.wo\.weight": "split 1",
             r".*DenseReluDense\.wo\.bias": "scale",
+            r".*shared.weight$": "split 1",
+            # note: ^-- lm_head.weight tied with word embeddings
         },
-        input_rules={},
+        input_rules={
+            r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
+            # ... lm_head's weights (tied embeddings) are already split across input dimension
+        },
         output_rules={
             r".*SelfAttention$": {0: "sum"},
             r".*DenseReluDense$": {0: "sum"},
+            r".*shared$": {0: "gather -1"},
+            r".*lm_head$": {0: "sum"},
         },
         attr_rules={
             r".*SelfAttention$": {
