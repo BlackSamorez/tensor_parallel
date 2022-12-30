@@ -5,7 +5,7 @@ import torch
 import transformers
 from transformers import AutoTokenizer
 
-from tensor_parallel import TensorParallel, tensor_parallel
+from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel, tensor_parallel
 from tensor_parallel.slicing_configs import get_bloom_config
 
 
@@ -39,27 +39,30 @@ def test_bloom_inference(use_config, devices, model_name="bigscience/bloom-560m"
     torch.testing.assert_close(out3_ref.logits, out3.logits, atol=3e-3, rtol=1e-05)
 
 
-@pytest.mark.parametrize("num_beams", [1, 3])
+@pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {"num_beams": 5}, {}, {"top_p": 0.5}])
 @pytest.mark.parametrize("model_name", ["t5-small"])  # "bigscience/bloom-560m"
-def test_generate(num_beams, model_name):
-    def _generate_scores(model, tokenizer, prompt, num_beams):
-        return model.generate(
+def test_generate(generate_kwargs, model_name):
+    def _generate_scores(model, tokenizer, prompt, generate_kwargs):
+        scores_tuple = model.generate(
             tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]),
-            num_beams=num_beams,
             min_length=5,
             return_dict_in_generate=True,
             output_scores=True,
-        ).scores[0]
+            **generate_kwargs,
+        ).scores
+        return torch.stack([scores[0] for scores in scores_tuple], dim=0)
 
-    def _get_scores_allclose_length(first_scores: Sequence[torch.Tensor], second_scores: Sequence[torch.Tensor]) -> int:
-        length = 0
-        while (
-            length < len(first_scores)
-            and length < len(second_scores)
-            and torch.allclose(first_scores[length], second_scores[length], atol=3e-3, rtol=3e-3)
-        ):
-            length += 1
-        return length
+    def _assert_scores_allclose_long_enough(
+        first_scores: Sequence[torch.Tensor], second_scores: Sequence[torch.Tensor]
+    ) -> int:
+        for i in range(3):
+            torch.testing.assert_close(
+                first_scores[i],
+                second_scores[i],
+                atol=3e-3,
+                rtol=1e-05,
+                msg=lambda msg: f"Diverged at {'%d%s' % (i + 1,'tsnrhtdd'[((i + 1)//10%10!=1)*((i + 1)%10<4)*(i + 1)%10::4])} token: {msg}",
+            )
 
     devices = ["cpu"] * 2
     if model_name == "t5-small":
@@ -75,12 +78,35 @@ def test_generate(num_beams, model_name):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     prompt = "Translate from German to English: How are you?"
 
-    scores_ref = _generate_scores(model, tokenizer, prompt, num_beams)
+    scores_ref = _generate_scores(model, tokenizer, prompt, generate_kwargs)
 
     model_tp = tensor_parallel(model, devices)
     del model
 
-    scores = _generate_scores(model_tp, tokenizer, prompt, num_beams)
+    scores = _generate_scores(model_tp, tokenizer, prompt, generate_kwargs)
 
-    matching_len = _get_scores_allclose_length(scores_ref, scores)
-    assert matching_len > 3, ".generate() diverges too quickly"
+    _assert_scores_allclose_long_enough(scores_ref, scores)
+
+
+@pytest.mark.parametrize("use_predefined_config", [False, True])
+@pytest.mark.parametrize("model_name", ["t5-small"])
+@pytest.mark.parametrize("sharded", [False, True])
+def test_encoder(use_predefined_config, model_name, sharded):
+    devices = ["cpu"] * 2
+    model = (
+        transformers.T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True)
+        .float()
+        .to(devices[0])
+    )
+
+    input = torch.randint(1, 1000, size=(2, 3), device=devices[0])
+    out_ref = model.get_encoder()(input)
+
+    if not use_predefined_config:
+        model.config.architectures = ["Pretend we don't know this architecture"]
+    model_tp = tensor_parallel(model, devices, sharded=sharded)
+    assert isinstance(model_tp, TensorParallelPreTrainedModel)
+    del model
+
+    out = model_tp.get_encoder()(input)
+    torch.testing.assert_close(out_ref, out, atol=3e-3, rtol=1e-05)

@@ -108,7 +108,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
                             self.wrapped_pretrained_model.wrapped_model.devices,
                         )[self.wrapped_pretrained_model.wrapped_model.output_device_index]
 
-            return _EncoderWrapper()
+            encoder_wrapper_class = _EncoderWrapper
 
         elif isinstance(self.wrapped_model, Sharded):
 
