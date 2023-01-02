@@ -52,6 +52,8 @@ class TensorParallel(nn.Module):
 
         if len(device_ids) <= 1:
             self.module_shards.append(module)
+            if len(device_ids) == 1:
+                self.module_shards[0].to(device_ids[0])
             return
 
         if config is None:
@@ -79,9 +81,17 @@ class TensorParallel(nn.Module):
             f"This means that each device uses {inefficiency_rate * 100:.3f}% extra memory for parameters",
         )
 
+        # more self-diagnostics: make sure that the model was not cast .to one device
+        self._sanity_check_params = nn.ParameterList([
+            nn.Parameter(torch.empty(0, device=device)) for device in self.devices
+        ])
+
     def forward(self, *args, **kwargs):
         if len(self.module_shards) <= 1:
             return [self.module_shards[0](*args, **kwargs)][self.output_device_index]
+        if not all(p.device == d for p, d in zip(self._sanity_check_params, self.devices)):
+            raise ValueError("Model parameters were moved to incorrect devices, did call on model.cuda() or "
+                             "model.to(device)? If so, please avoid doing that")
         args_and_kwargs = (args, kwargs)
         flat_tensors = [obj for obj in nested_flatten(args_and_kwargs) if isinstance(obj, torch.Tensor)]
         flat_tensors_replicated = broadcast_coalesced(flat_tensors, self.devices, all_cuda=self.all_cuda)
