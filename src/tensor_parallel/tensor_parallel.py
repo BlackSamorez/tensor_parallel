@@ -54,7 +54,7 @@ class TensorParallel(nn.Module):
 
         if len(device_ids) <= 1:
             self.module_shards.append(module)
-            if len(device_ids) == 1:
+            if len(device_ids) == 1 and not delay_init:
                 self.module_shards[0].to(device_ids[0])
             return
 
