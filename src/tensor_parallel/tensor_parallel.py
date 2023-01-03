@@ -86,7 +86,7 @@ class TensorParallel(nn.Module):
 
         # more self-diagnostics: make sure that the model was not cast .to one device
         self._sanity_check_params = nn.ParameterList(
-            [nn.Parameter(torch.empty(0, device=device)) for device in self.devices]
+            [nn.Parameter(torch.empty(0, device=device), requires_grad=False) for device in self.devices]
         )
 
     def forward(self, *args, **kwargs):
