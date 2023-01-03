@@ -131,13 +131,17 @@ class TensorParallel(nn.Module):
         elif output_device_index is None:
             output_device_index = 0
 
-        assert len(device_ids) == len(self.module_shards), f"must specify exactly {len(self.module_shards)} devices"
+        assert len(device_ids) == len(self.devices), f"must specify exactly {len(self.module_shards)} devices"
         self.devices = device_ids
         self.output_device_index = output_device_index
         self.all_cuda = all(device.type == "cuda" for device in self.devices)
         self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
         for i in range(len(self.module_shards)):
             self.module_shards[i].to(device=device_ids[i])
+        # self-diagnostics: make sure that the model was not cast .to one device
+        self._sanity_check_params = nn.ParameterList(
+            [nn.Parameter(torch.empty(0, device=device)) for device in self.devices]
+        )
         return self
 
 
