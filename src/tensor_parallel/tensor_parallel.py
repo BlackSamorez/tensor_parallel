@@ -54,19 +54,19 @@ class TensorParallel(nn.Module):
             self.module_shards.append(module)
             if len(device_ids) == 1:
                 self.module_shards[0].to(device_ids[0])
-            return
 
-        if config is None:
-            config = Config.get_default_config(module, self.devices)
-            logger.info("Using automatic config: sharding individual linear/conv/emb layers")
+        else:
+            if config is None:
+                config = Config.get_default_config(module, self.devices)
+                logger.info("Using automatic config: sharding individual linear/conv/emb layers")
 
-        config_with_ops = config.create_collective_ops(self.devices)
-        # ^-- creates a copy of comfig with collective op instances, such as AllReduce and AllGather
+            config_with_ops = config.create_collective_ops(self.devices)
+            # ^-- creates a copy of comfig with collective op instances, such as AllReduce and AllGather
 
-        for rank, device in enumerate(self.devices):
-            self.module_shards.append(
-                config.make_shard(module, device, config_with_ops, rank=rank, world_size=world_size)
-            )
+            for rank, device in enumerate(self.devices):
+                self.module_shards.append(
+                    config.make_shard(module, device, config_with_ops, rank=rank, world_size=world_size)
+                )
 
         # self-diagnostics: check if the model was sharded properly
 
@@ -114,6 +114,31 @@ class TensorParallel(nn.Module):
             return parallel_apply(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
         else:
             return parallel_apply_simple(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
+
+    def to_devices(
+        self,
+        device_ids: Sequence[torch.device],
+        output_device: Optional[torch.device] = None,
+        output_device_index: Optional[int] = None,
+    ):
+        """Moves module shards to new devices, works in-place"""
+        device_ids = check_device_ids(device_ids)
+        if output_device is not None:
+            output_device = canonicalize_device(output_device)
+            assert output_device in device_ids, f"Output device {output_device} not in {device_ids}"
+            output_device_index = device_ids.index(output_device)
+            del output_device
+        elif output_device_index is None:
+            output_device_index = 0
+
+        assert len(device_ids) == len(self.module_shards), f"must specify exactly {len(self.module_shards)} devices"
+        self.devices = device_ids
+        self.output_device_index = output_device_index
+        self.all_cuda = all(device.type == "cuda" for device in self.devices)
+        self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
+        for i in range(len(self.module_shards)):
+            self.module_shards[i].to(device=device_ids[i])
+        return self
 
 
 def parallel_apply_simple(
