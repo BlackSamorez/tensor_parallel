@@ -24,7 +24,7 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
     num_heads = model_config.n_head
     head_dim = model_config.hidden_size // num_heads
     gather_kv_across_ranks = CollectiveOperation(
-        world_size=world_size, func=lambda *kvs: [PerDeviceTensors(*chain(*kvs))] * world_size
+        world_size=world_size, func=lambda *kvs: [PerDeviceTensors(*chain(*(x or [None] for x in kvs)))] * world_size
     )  # this operation ensures that we get attention cache for all heads on each device
 
     select_kv_for_rank = lambda kvs, rank: (kvs[2 * rank], kvs[2 * rank + 1]) if kvs else None

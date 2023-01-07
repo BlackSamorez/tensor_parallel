@@ -137,7 +137,7 @@ class Config:
         source_tensors = dict(chain(module.named_parameters(), module.named_buffers()))
         _maybe_parameter = lambda x, buf: nn.Parameter(buf, x.requires_grad) if isinstance(x, nn.Parameter) else x
         substitutes = {
-            id(x): _maybe_parameter(x, torch.empty([], dtype=x.dtype, device=x.device, requires_grad=x.requires_grad))
+            id(x): _maybe_parameter(x, torch.empty(0, dtype=x.dtype, device=x.device, requires_grad=x.requires_grad))
             for x in source_tensors.values()
         }
         shard = deepcopy(module, memo=substitutes).to(device)

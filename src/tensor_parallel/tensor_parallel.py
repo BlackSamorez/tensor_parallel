@@ -28,6 +28,7 @@ class TensorParallel(nn.Module):
         output_device: Optional[torch.device] = None,
         output_device_index: Optional[int] = None,
         config: Optional[Config] = None,
+        delay_init: bool = False,
     ):
         super().__init__()
         original_params = sum(p.numel() for p in module.parameters())
@@ -48,10 +49,13 @@ class TensorParallel(nn.Module):
         self.output_device_index = output_device_index
         self.all_cuda = all(device.type == "cuda" for device in self.devices)
         self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
+        self.need_delayed_init = delay_init
         world_size = len(self.devices)
 
         if len(device_ids) <= 1:
             self.module_shards.append(module)
+            if len(device_ids) == 1 and not delay_init:
+                self.module_shards[0].to(device_ids[0])
             return
 
         if config is None:
@@ -62,6 +66,7 @@ class TensorParallel(nn.Module):
         # ^-- creates a copy of comfig with collective op instances, such as AllReduce and AllGather
 
         for rank, device in enumerate(self.devices):
+            device = torch.device("cpu") if delay_init else device
             self.module_shards.append(
                 config.make_shard(module, device, config_with_ops, rank=rank, world_size=world_size)
             )
@@ -77,6 +82,11 @@ class TensorParallel(nn.Module):
             log_level,
             f"Inefficiency warning: model has {original_params} params but shards have {params_per_shard} params. "
             f"This means that each device uses {inefficiency_rate * 100:.3f}% extra memory for parameters",
+        )
+
+        # more self-diagnostics: make sure that the model was not cast .to one device
+        self._sanity_check_params = nn.ParameterList(
+            [nn.Parameter(torch.empty(0, device=device), requires_grad=False) for device in self.devices]
         )
 
     def prepare_args_kwargs_for_forward(self, *args, **kwargs):
@@ -98,8 +108,19 @@ class TensorParallel(nn.Module):
         return zip(*args_and_kwargs_replicated)
 
     def forward(self, *args, **kwargs):
+        if self.need_delayed_init:
+            for shard, device in zip(self.module_shards, self.devices):
+                shard.to(device)
+            self.need_delayed_init = False
+
         if len(self.module_shards) <= 1:
             return [self.module_shards[0](*args, **kwargs)][self.output_device_index]
+
+        if not all(p.device == d for p, d in zip(self._sanity_check_params, self.devices)):
+            raise ValueError(
+                "Model parameters were moved to incorrect devices, did call on model.cuda() or "
+                "model.to(device)? If so, please avoid doing that"
+            )
         inputs, kwargs_tup = self.prepare_args_kwargs_for_forward(*args, **kwargs)
         if self.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
             return parallel_apply(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
