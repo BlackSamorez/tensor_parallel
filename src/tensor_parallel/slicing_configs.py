@@ -19,12 +19,19 @@ from tensor_parallel.tensor_parallel import PerDeviceTensors
 ConfigGetter = Callable[[PretrainedConfig, Sequence[torch.device]], Config]
 
 
+def maybe_gather_kv(*present_key_value_state, world_size):
+    if present_key_value_state[0] is None:
+        return present_key_value_state
+    else:
+        return [tuple(PerDeviceTensors(*item) for item in zip(*present_key_value_state))] * world_size
+
+
 def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device]) -> Config:
     world_size = len(devices)
     num_heads = model_config.n_head
     head_dim = model_config.hidden_size // num_heads
     gather_kv_across_ranks = CollectiveOperation(
-        world_size=world_size, func=lambda *kvs: [PerDeviceTensors(*chain(*(x or [None] for x in kvs)))] * world_size
+        world_size=world_size, func=lambda *kvs: maybe_gather_kv(*kvs, world_size=world_size)
     )  # this operation ensures that we get attention cache for all heads on each device
 
     select_kv_for_rank = lambda kvs, rank: (kvs[2 * rank], kvs[2 * rank + 1]) if kvs else None
@@ -90,15 +97,8 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
     num_heads = model_config.num_heads
     head_dim = model_config.d_kv
 
-    def maybe_gather_kv(*present_key_value_state):
-        if present_key_value_state[0] is None:
-            return present_key_value_state
-        else:
-            present_key_state, present_value_state = tuple(zip(*present_key_value_state))
-            return [(PerDeviceTensors(*present_key_state), PerDeviceTensors(*present_value_state))] * world_size
-
     gather_kv_across_ranks = CollectiveOperation(
-        world_size=world_size, func=maybe_gather_kv
+        world_size=world_size, func=lambda *kvs: maybe_gather_kv(*kvs, world_size=world_size)
     )  # this operation ensures that we get attention cache for all heads on each device
 
     def select_kv_for_rank(*kvs, rank):

@@ -12,7 +12,14 @@ from transformers import PretrainedConfig, PreTrainedModel
 from tensor_parallel.sharding import Sharded
 from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE, Config
 from tensor_parallel.slicing_configs import PREDEFINED_CONFIGS
-from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids, parallel_apply, parallel_apply_simple
+from tensor_parallel.tensor_parallel import (
+    PerDeviceTensors,
+    TensorParallel,
+    check_device_ids,
+    parallel_apply,
+    parallel_apply_simple,
+)
+from tensor_parallel.utils import nested_map
 
 logger = logging.getLogger(__file__)
 
@@ -72,8 +79,8 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
         return self.wrapped_model.module_shards[0].prepare_inputs_for_generation(*args, **kwargs)
 
     def _reorder_cache(self, past, beam_idx):
-        for shard in self.wrapped_model.module_shards:
-            shard._reorder_cache(past, beam_idx)
+        for i, shard in enumerate(self.wrapped_model.module_shards):
+            shard._reorder_cache(nested_map(lambda x: x[i] if isinstance(x, PerDeviceTensors) else x, past), beam_idx)
 
     def get_encoder(self):
         assert len(self.wrapped_model.module_shards), "Can't get encoder since no module shards present"
