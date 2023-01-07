@@ -113,17 +113,17 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
 
     return Config(
         state_rules={
-            r".*SelfAttention\.q\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-            r".*SelfAttention\.k\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-            r".*SelfAttention\.v\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-            r".*relative_attention_bias\.weight": "split 1",
-            r".*SelfAttention\.o\.weight": "split 1",
-            r".*SelfAttention\.o\.bias": "scale",
-            r".*DenseReluDense\.wi\.(weight|bias)": "split 0",
-            r".*DenseReluDense\.wi_0\.(weight|bias)": "split 0",
-            r".*DenseReluDense\.wi_1\.(weight|bias)": "split 0",
-            r".*DenseReluDense\.wo\.weight": "split 1",
-            r".*DenseReluDense\.wo\.bias": "scale",
+            r".*SelfAttention\.q\.(weight|bias)$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r".*SelfAttention\.k\.(weight|bias)$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r".*SelfAttention\.v\.(weight|bias)$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r".*relative_attention_bias\.weight$": "split 1",
+            r".*SelfAttention\.o\.weight$": "split 1",
+            r".*SelfAttention\.o\.bias$": "scale",
+            r".*DenseReluDense\.wi\.(weight|bias)$": "split 0",
+            r".*DenseReluDense\.wi_0\.(weight|bias)$": "split 0",
+            r".*DenseReluDense\.wi_1\.(weight|bias)$": "split 0",
+            r".*DenseReluDense\.wo\.weight$": "split 1",
+            r".*DenseReluDense\.wo\.bias$": "scale",
             r".*shared.weight$": "split 1",
             # note: ^-- lm_head.weight tied with word embeddings
         },
