@@ -40,7 +40,7 @@ def test_bloom_inference(use_config, devices, model_name="bigscience/bloom-560m"
 
 
 @pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {"num_beams": 5}, {}, {"top_p": 0.5}])
-@pytest.mark.parametrize("model_name", ["t5-small"])  # "bigscience/bloom-560m"
+@pytest.mark.parametrize("model_name", ["t5-small", "bigscience/bloom-560m"])
 def test_generate(generate_kwargs, model_name):
     def _generate_scores(model, tokenizer, prompt, generate_kwargs):
         scores_tuple = model.generate(

@@ -94,7 +94,7 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
         if present_key_value_state[0] is None:
             return present_key_value_state
         else:
-            present_key_state, present_value_state = map(tuple, zip(*present_key_value_state))
+            present_key_state, present_value_state = tuple(zip(*present_key_value_state))
             return [(PerDeviceTensors(*present_key_state), PerDeviceTensors(*present_value_state))] * world_size
 
     gather_kv_across_ranks = CollectiveOperation(
@@ -125,7 +125,7 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
             # note: ^-- lm_head.weight tied with word embeddings
         },
         input_rules={
-            r".*SelfAttention$": {0: "sum", "past_key_value": select_kv_for_rank},
+            r".*SelfAttention$": {"past_key_value": select_kv_for_rank},
             r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
             # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
