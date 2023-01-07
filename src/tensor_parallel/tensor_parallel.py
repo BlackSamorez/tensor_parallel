@@ -221,3 +221,7 @@ class PerDeviceTensors:
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.tensors})"
+
+    @property
+    def shape(self):
+        return self.tensors[0].shape

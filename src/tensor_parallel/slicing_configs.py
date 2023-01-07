@@ -89,11 +89,24 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
     world_size = len(devices)
     num_heads = model_config.num_heads
     head_dim = model_config.d_kv
+
+    def maybe_gather_kv(*present_key_value_state):
+        if present_key_value_state[0] is None:
+            return present_key_value_state
+        else:
+            present_key_state, present_value_state = map(tuple, zip(*present_key_value_state))
+            return [(PerDeviceTensors(*present_key_state), PerDeviceTensors(*present_value_state))] * world_size
+
     gather_kv_across_ranks = CollectiveOperation(
-        world_size=world_size, func=lambda *kvs: [PerDeviceTensors(*chain(*kvs))] * world_size
+        world_size=world_size, func=maybe_gather_kv
     )  # this operation ensures that we get attention cache for all heads on each device
 
-    select_kv_for_rank = lambda kvs, rank: (kvs[2 * rank], kvs[2 * rank + 1]) if kvs else None
+    def select_kv_for_rank(*kvs, rank):
+        if kvs[0] is None:
+            return None
+        else:
+            kvs = kvs[0]
+            return (kvs[0][rank], kvs[1][rank])
 
     return Config(
         state_rules={
@@ -112,11 +125,12 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
             # note: ^-- lm_head.weight tied with word embeddings
         },
         input_rules={
+            r".*SelfAttention$": {0: "sum", "past_key_value": select_kv_for_rank},
             r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
             # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
         output_rules={
-            r".*SelfAttention$": {0: "sum"},
+            r".*SelfAttention$": {0: "sum", 1: gather_kv_across_ranks},
             r".*DenseReluDense$": {0: "sum"},
             r".*shared$": {0: "gather -1"},
             r".*lm_head$": {0: "sum"},
