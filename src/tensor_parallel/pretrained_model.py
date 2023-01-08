@@ -61,6 +61,11 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
 
         self.wrapped_model = TensorParallel(module, device_ids, output_device, output_device_index, config)
 
+        if hasattr(self.wrapped_model.module_shards[0], "_hf_hook"):
+            from accelerate.hooks import remove_hook_from_module
+
+            remove_hook_from_module(self.wrapped_model, recurse=True)
+
         self.encoder_shards = nn.ModuleList()
         if module.config.is_encoder_decoder:
             for encoder_decoder_shard in self.wrapped_model.module_shards:
