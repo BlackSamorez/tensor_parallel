@@ -133,6 +133,7 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
             r".*DenseReluDense\.wi_1\.weight$": "split 0",
             r".*DenseReluDense\.wo\.weight$": "split 1",
             r".*shared.weight$": "split 1",
+            r".*lm_head\.weight$": "split 1",
             # note: ^-- lm_head.weight tied with word embeddings
         },
         input_rules={
