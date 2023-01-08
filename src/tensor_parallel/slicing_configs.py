@@ -88,6 +88,10 @@ def split_num_heads(num_heads: int, *, rank: int, world_size: int):
     return torch.empty(num_heads, device="meta").tensor_split(world_size)[rank].numel()
 
 
+def split_inner_dim(inner_dim: int, *, rank: int, num_heads: int, world_size: int):
+    return split_num_heads(num_heads=num_heads, rank=rank, world_size=world_size) * (inner_dim // num_heads)
+
+
 def split_alibi(alibi: torch.Tensor, *, rank: int, num_heads: int, world_size: int) -> torch.Tensor:
     """split alibi tensor of shape [batch_size * num_heads, ...] over attention heads"""
     alibi_expanded = alibi.reshape(-1, num_heads, *alibi.shape[1:])
@@ -123,7 +127,7 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
                 split_heads, dim=0, head_dim=head_dim, world_size=world_size
             ),
             r".*relative_attention_bias\.weight$": "split 1",
-            r".*SelfAttention\.o\.weight$": "split 1",
+            r".*SelfAttention\.o\.weight$": partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
             r".*SelfAttention\.o\.bias$": "scale",
             r".*DenseReluDense\.wi\.(weight|bias)$": "split 0",
             r".*DenseReluDense\.wi_0\.(weight|bias)$": "split 0",
@@ -147,7 +151,7 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
         attr_rules={
             r".*SelfAttention$": {
                 "n_heads": partial(split_num_heads, world_size=world_size),
-                "inner_dim": partial(split_num_heads, world_size=world_size),
+                "inner_dim": partial(split_inner_dim, num_heads=model_config.num_heads, world_size=world_size),
             },
             r".*relative_attention_bias$": {"embedding_dim": partial(split_num_heads, world_size=world_size)},
         },

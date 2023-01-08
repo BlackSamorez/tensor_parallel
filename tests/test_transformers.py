@@ -39,9 +39,10 @@ def test_bloom_inference(use_config, devices, model_name="bigscience/bloom-560m"
     torch.testing.assert_close(out3_ref.logits, out3.logits, atol=3e-3, rtol=1e-05)
 
 
-@pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {"num_beams": 5}, {}, {"top_p": 0.5}])
+@pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {}, {"top_p": 0.5}])
 @pytest.mark.parametrize("model_name", ["t5-small", "bigscience/bloom-560m"])
-def test_generate(generate_kwargs, model_name):
+@pytest.mark.parametrize("devices", [("cpu",), ("cpu",) * 2, ("cpu",) * 3])
+def test_generate(generate_kwargs, model_name, devices):
     def _generate_scores(model, tokenizer, prompt, generate_kwargs):
         scores_tuple = model.generate(
             tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]),
@@ -64,7 +65,6 @@ def test_generate(generate_kwargs, model_name):
                 msg=lambda msg: f"Diverged at {'%d%s' % (i + 1,'tsnrhtdd'[((i + 1)//10%10!=1)*((i + 1)%10<4)*(i + 1)%10::4])} token: {msg}",
             )
 
-    devices = ["cpu"] * 2
     if model_name == "t5-small":
         model = (
             transformers.T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True)
