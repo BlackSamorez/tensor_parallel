@@ -89,20 +89,7 @@ class TensorParallel(nn.Module):
             [nn.Parameter(torch.empty(0, device=device), requires_grad=False) for device in self.devices]
         )
 
-    def forward(self, *args, **kwargs):
-        if self.need_delayed_init:
-            for shard, device in zip(self.module_shards, self.devices):
-                shard.to(device)
-            self.need_delayed_init = False
-
-        if len(self.module_shards) <= 1:
-            return [self.module_shards[0](*args, **kwargs)][self.output_device_index]
-
-        if not all(p.device == d for p, d in zip(self._sanity_check_params, self.devices)):
-            raise ValueError(
-                "Model parameters were moved to incorrect devices, did call on model.cuda() or "
-                "model.to(device)? If so, please avoid doing that"
-            )
+    def prepare_args_kwargs_for_forward(self, *args, **kwargs):
         args_and_kwargs = (args, kwargs)
         flat_tensors = [obj for obj in nested_flatten(args_and_kwargs) if isinstance(obj, torch.Tensor)]
         flat_tensors_replicated = broadcast_coalesced(flat_tensors, self.devices, all_cuda=self.all_cuda)
@@ -118,7 +105,23 @@ class TensorParallel(nn.Module):
                     args_and_kwargs_replicated[idx].append(obj)
         for idx in range(len(self.module_shards)):
             args_and_kwargs_replicated[idx] = nested_pack(args_and_kwargs_replicated[idx], args_and_kwargs)
-        inputs, kwargs_tup = zip(*args_and_kwargs_replicated)
+        return zip(*args_and_kwargs_replicated)
+
+    def forward(self, *args, **kwargs):
+        if self.need_delayed_init:
+            for shard, device in zip(self.module_shards, self.devices):
+                shard.to(device)
+            self.need_delayed_init = False
+
+        if len(self.module_shards) <= 1:
+            return [self.module_shards[0](*args, **kwargs)][self.output_device_index]
+
+        if not all(p.device == d for p, d in zip(self._sanity_check_params, self.devices)):
+            raise ValueError(
+                "Model parameters were moved to incorrect devices, did call on model.cuda() or "
+                "model.to(device)? If so, please avoid doing that"
+            )
+        inputs, kwargs_tup = self.prepare_args_kwargs_for_forward(*args, **kwargs)
         if self.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
             return parallel_apply(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
         else:
@@ -218,3 +221,7 @@ class PerDeviceTensors:
 
     def __repr__(self):
         return f"{self.__class__.__name__}({self.tensors})"
+
+    @property
+    def shape(self):
+        return self.tensors[0].shape

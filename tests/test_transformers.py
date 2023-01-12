@@ -1,9 +1,11 @@
+from typing import Sequence
+
 import pytest
 import torch
 import transformers
 from transformers import AutoTokenizer
 
-from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel
+from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel, tensor_parallel
 from tensor_parallel.slicing_configs import get_bloom_config
 
 
@@ -37,25 +39,74 @@ def test_bloom_inference(use_config, devices, model_name="bigscience/bloom-560m"
     torch.testing.assert_close(out3_ref.logits, out3.logits, atol=3e-3, rtol=1e-05)
 
 
-@pytest.mark.parametrize("num_beams", [1, 3])
-def test_bloom_generate(num_beams, model_name="bigscience/bloom-560m"):
-    devices = ["cpu"] * 2
-    model_config = transformers.AutoConfig.from_pretrained(model_name)
-    model = transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+@pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {}, {"top_p": 0.5}])
+@pytest.mark.parametrize("model_name", ["t5-small", "bigscience/bloom-560m"])
+@pytest.mark.parametrize("devices", [("cpu",), ("cpu",) * 2, ("cpu",) * 3])
+def test_generate(generate_kwargs, model_name, devices):
+    def _generate_scores(model, tokenizer, prompt, generate_kwargs):
+        scores_tuple = model.generate(
+            tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]),
+            min_length=5,
+            return_dict_in_generate=True,
+            output_scores=True,
+            **generate_kwargs,
+        ).scores
+        return torch.stack([scores[0] for scores in scores_tuple], dim=0)
+
+    def _assert_scores_allclose_long_enough(
+        first_scores: Sequence[torch.Tensor], second_scores: Sequence[torch.Tensor]
+    ) -> int:
+        for i in range(3):
+            torch.testing.assert_close(
+                first_scores[i],
+                second_scores[i],
+                atol=3e-3,
+                rtol=1e-05,
+                msg=lambda msg: f"Diverged at {'%d%s' % (i + 1,'tsnrhtdd'[((i + 1)//10%10!=1)*((i + 1)%10<4)*(i + 1)%10::4])} token: {msg}",
+            )
+
+    if model_name == "t5-small":
+        model = (
+            transformers.T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True)
+            .float()
+            .to(devices[0])
+        )
+    else:
+        model = (
+            transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+        )
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    prompt = "Hello there!"
+    prompt = "Translate from German to English: How are you?"
 
-    gen_ref = tokenizer.decode(
-        model.generate(tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]), num_beams=num_beams)[0]
-    )
-    assert gen_ref != prompt, "Nothing is generated. This test is unreliable"
+    scores_ref = _generate_scores(model, tokenizer, prompt, generate_kwargs)
 
-    tp_config = get_bloom_config(model_config, devices)
-    model_tp = TensorParallelPreTrainedModel(model, devices, config=tp_config)
+    model_tp = tensor_parallel(model, devices)
     del model
 
-    gen = tokenizer.decode(
-        model_tp.generate(tokenizer([prompt], return_tensors="pt")["input_ids"].to(devices[0]), num_beams=num_beams)[0]
+    scores = _generate_scores(model_tp, tokenizer, prompt, generate_kwargs)
+
+    _assert_scores_allclose_long_enough(scores_ref, scores)
+
+
+@pytest.mark.parametrize("use_predefined_config", [False, True])
+@pytest.mark.parametrize("model_name", ["t5-small"])
+@pytest.mark.parametrize("sharded", [False, True])
+def test_encoder(use_predefined_config, model_name, sharded):
+    devices = ["cpu"] * 2
+    model = (
+        transformers.T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True)
+        .float()
+        .to(devices[0])
     )
 
-    assert gen == gen_ref
+    input = torch.randint(1, 1000, size=(2, 3), device=devices[0])
+    out_ref = model.get_encoder()(input)
+
+    if not use_predefined_config:
+        model.config.architectures = ["Pretend we don't know this architecture"]
+    model_tp = tensor_parallel(model, devices, sharded=sharded)
+    assert isinstance(model_tp, TensorParallelPreTrainedModel)
+    del model
+
+    out = model_tp.get_encoder()(input)
+    torch.testing.assert_close(out_ref, out, atol=3e-3, rtol=1e-05)
