@@ -199,7 +199,7 @@ def get_a_var(obj):
 def canonicalize_device(device: Union[torch.device, str]) -> torch.device:
     device = torch.device(device)
     if device.type == "cuda" and device.index is None:
-        device = torch.device(device, index=0)
+        device = torch.device(device.type, index=0)
     return device
 
 
