@@ -335,6 +335,7 @@ class _TensorParallelWrapper(nn.Module):
     ):
         super().__init__()
         self.module = module
+        self.__dict__["module"] = module  # for it to be accessible without getattr
         self.input_actions, self.output_actions = input_actions, output_actions
         self.rank, self.world_size = rank, world_size
 
@@ -342,6 +343,9 @@ class _TensorParallelWrapper(nn.Module):
         args, kwargs = process_input(self.input_actions, self.rank, self.world_size, *args, **kwargs)
         output = self.module(*args, **kwargs)
         return process_output(output, self.output_actions, rank=self.rank, world_size=self.world_size)
+
+    def __getattr__(self, attr):
+        return getattr(self.module, attr)
 
 
 def _split_groups(tensor: torch.Tensor, dim: int, *, groups: int, rank: int, world_size: int) -> torch.Tensor:
