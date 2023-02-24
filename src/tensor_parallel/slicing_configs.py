@@ -13,14 +13,8 @@ import torch
 from transformers import BertConfig, BloomConfig, CodeGenConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
 
 from tensor_parallel.communications import CollectiveOperation
-from tensor_parallel.slicing_actions import (
-    SplitInChunks,
-    SplitNumChunks,
-    SplitDimInChunks,
-    gather_kv,
-    SplitAlibi,
-)
 from tensor_parallel.slicer_wrapper import Config
+from tensor_parallel.slicing_actions import SplitAlibi, SplitDimInChunks, SplitInChunks, SplitNumChunks, gather_kv
 from tensor_parallel.tensor_parallel import PerDeviceTensors
 from tensor_parallel.utils import nested_map
 
@@ -56,7 +50,10 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
             # note: ^-- lm_head.weight is tied with word_embeddings
         },
         input_rules={
-            r".*self_attention$": {"layer_past": select_kv_for_rank, "alibi": SplitAlibi(world_size=world_size, num_heads=num_heads)},
+            r".*self_attention$": {
+                "layer_past": select_kv_for_rank,
+                "alibi": SplitAlibi(world_size=world_size, num_heads=num_heads),
+            },
             r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
             # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
@@ -137,7 +134,9 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
                 "n_heads": SplitNumChunks(world_size=world_size),
                 "inner_dim": SplitDimInChunks(world_size=world_size, num_chunks=num_heads),
             },
-            r".*relative_attention_bias$": {"embedding_dim": SplitDimInChunks(world_size=world_size, num_chunks=num_heads)},
+            r".*relative_attention_bias$": {
+                "embedding_dim": SplitDimInChunks(world_size=world_size, num_chunks=num_heads)
+            },
         },
     )
 

@@ -1,14 +1,14 @@
 """slicing_actions.py: file contains actions """
 
-import torch
-from torch import Tensor
-
 from abc import ABC, abstractclassmethod
 from typing import Any
 
+import torch
+from torch import Tensor
+
 from tensor_parallel.communications import CollectiveOperation
-from tensor_parallel.tensor_parallel import PerDeviceTensors
 from tensor_parallel.slicer_wrapper import Action
+from tensor_parallel.tensor_parallel import PerDeviceTensors
 
 
 class Action(ABC):
@@ -37,7 +37,7 @@ class Scale(Action):
 
 
 class SplitInChunks(Action):
-    def __init__(self, world_size: int, dim:int, chunk_size: int, optional: bool = False):
+    def __init__(self, world_size: int, dim: int, chunk_size: int, optional: bool = False):
         super().__init__()
         self.world_size = world_size
         self.dim = dim
@@ -74,7 +74,9 @@ class SplitDimInChunks(Action):
         self.num_chunks = num_chunks
 
     def __call__(self, inner_dim: int, rank: int) -> int:
-        return torch.empty(self.num_chunks, device="meta").tensor_split(self.world_size)[rank].numel() * (inner_dim // self.num_chunks)
+        return torch.empty(self.num_chunks, device="meta").tensor_split(self.world_size)[rank].numel() * (
+            inner_dim // self.num_chunks
+        )
 
 
 class GatherKV(Action):
@@ -103,12 +105,11 @@ class SplitAlibi(Action):
 
 def gather_kv(world_size: int) -> Action:
     """Constructs an Action for gathering attention caches across ranks"""
+
     def operation(*present_key_value_state):
         if present_key_value_state[0] is None:
             return present_key_value_state
         else:
             return [tuple(PerDeviceTensors(*item) for item in zip(*present_key_value_state))] * world_size
 
-    return CollectiveOperation(
-        world_size=world_size, func=operation
-    )
+    return CollectiveOperation(world_size=world_size, func=operation)
