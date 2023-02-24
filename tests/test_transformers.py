@@ -3,17 +3,17 @@ from typing import Sequence
 import pytest
 import torch
 import transformers
-from transformers import AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel, tensor_parallel
-from tensor_parallel.slicing_configs import get_bloom_config
+from tensor_parallel.pretrained_model import find_predefined_tensor_parallel_config
 
 
 @pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-def test_bloom_inference(use_config, devices, model_name="bigscience/bloom-560m"):
-    model_config = transformers.AutoConfig.from_pretrained(model_name)
-    model = transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+@pytest.mark.parametrize("model_name", ["bigscience/bloom-560m"])
+def test_forward_gpt2_like(use_config, devices, model_name):
+    model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 
     inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
     inp2 = torch.randint(1, 1000, size=(2, 1), device=devices[0])
@@ -25,7 +25,7 @@ def test_bloom_inference(use_config, devices, model_name="bigscience/bloom-560m"
 
     tp_config = None
     if use_config:
-        tp_config = get_bloom_config(model_config, devices)
+        tp_config = find_predefined_tensor_parallel_config(model.config, devices)
     model_tp = TensorParallel(model, devices, config=tp_config)
     del model
 
