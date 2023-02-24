@@ -6,6 +6,7 @@ from transformers import BloomConfig
 from transformers.models.bloom.modeling_bloom import BloomBlock, _expand_mask, _make_causal_mask, build_alibi_tensor
 
 from tensor_parallel import Config, TensorParallel
+from tensor_parallel.slicing_actions import Scale, Split
 
 
 @pytest.mark.parametrize("custom_config", [True, False])
@@ -19,11 +20,11 @@ def test_tp_bloom_block(devices, custom_config):
     if custom_config:
         tp_config = Config(
             state_rules={
-                ".*self_attention\.query_key_value\.(weight|bias)": "split 0",
-                ".*self_attention\.dense\.(weight|bias)": "split 0",
-                ".*mlp\.dense_h_to_4h\.(weight|bias)": "split 0",
-                ".*mlp\.dense_4h_to_h\.weight": "split 1",
-                ".*mlp\.dense_4h_to_h\.bias": "scale",
+                ".*self_attention\.query_key_value\.(weight|bias)": Split(world_size=len(devices), dim=0),
+                ".*self_attention\.dense\.(weight|bias)": Split(world_size=len(devices), dim=0),
+                ".*mlp\.dense_h_to_4h\.(weight|bias)": Split(world_size=len(devices), dim=0),
+                ".*mlp\.dense_4h_to_h\.weight": Split(world_size=len(devices), dim=1),
+                ".*mlp\.dense_4h_to_h\.bias": Scale(world_size=len(devices)),
             },
             input_rules={},
             output_rules={

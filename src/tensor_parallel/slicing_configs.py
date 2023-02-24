@@ -13,9 +13,17 @@ import torch
 from transformers import BertConfig, BloomConfig, CodeGenConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
 
 from tensor_parallel.communications import CollectiveOperation
+from tensor_parallel.per_device_tensors import PerDeviceTensors
 from tensor_parallel.slicer_wrapper import Config
-from tensor_parallel.slicing_actions import SplitAlibi, SplitDimInChunks, SplitInChunks, SplitNumChunks, gather_kv
-from tensor_parallel.tensor_parallel import PerDeviceTensors
+from tensor_parallel.slicing_actions import (
+    Scale,
+    Split,
+    SplitAlibi,
+    SplitDimInChunks,
+    SplitInChunks,
+    SplitNumChunks,
+    gather_kv,
+)
 from tensor_parallel.utils import nested_map
 
 ConfigGetter = Callable[[PretrainedConfig, Sequence[torch.device]], Config]
@@ -40,13 +48,13 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
                 SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
                 "split 1",
             ),
-            r".*self_attention\.dense\.bias$": "scale",
+            r".*self_attention\.dense\.bias$": Scale(world_size=world_size),
             # BloomMLP
-            r".*mlp\.dense_h_to_4h\.(weight|bias)$": "split 0",
-            r".*mlp\.dense_4h_to_h\.weight$": "split 1",
-            r".*mlp\.dense_4h_to_h\.bias$": "scale",
+            r".*mlp\.dense_h_to_4h\.(weight|bias)$": Split(world_size=world_size, dim=0),
+            r".*mlp\.dense_4h_to_h\.weight$": Split(world_size=world_size, dim=1),
+            r".*mlp\.dense_4h_to_h\.bias$": Scale(world_size=world_size),
             # BloomModel
-            r".*word_embeddings.weight$": "split 1",
+            r".*word_embeddings.weight$": Split(world_size=world_size, dim=1),
             # note: ^-- lm_head.weight is tied with word_embeddings
         },
         input_rules={
@@ -54,7 +62,7 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
                 "layer_past": select_kv_for_rank,
                 "alibi": SplitAlibi(world_size=world_size, num_heads=num_heads),
             },
-            r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
+            r".*lm_head$": {0: Split(world_size=world_size, dim=-1)},  # note: we need to split lm_head inputs because
             # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
         output_rules={
@@ -102,25 +110,25 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
                 SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
                 "split 0",
             ),
-            r".*relative_attention_bias\.weight$": "split 1",
+            r".*relative_attention_bias\.weight$": Split(world_size=world_size, dim=1),
             r".*SelfAttention\.o\.weight$": (
                 SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
                 "split 1",
             ),
             # T5DenseGatedActDense
-            r".*DenseReluDense\.wi\.weight$": "split 0",
-            r".*DenseReluDense\.wi_0\.weight$": "split 0",
-            r".*DenseReluDense\.wi_1\.weight$": "split 0",
+            r".*DenseReluDense\.wi\.weight$": Split(world_size=world_size, dim=0),
+            r".*DenseReluDense\.wi_0\.weight$": Split(world_size=world_size, dim=0),
+            r".*DenseReluDense\.wi_1\.weight$": Split(world_size=world_size, dim=0),
             # T5DenseActDense
-            r".*DenseReluDense\.wo\.weight$": "split 1",
+            r".*DenseReluDense\.wo\.weight$": Split(world_size=world_size, dim=1),
             # T5Model
-            r".*shared.weight$": "split 1",
-            r".*lm_head\.weight$": "split 1",
+            r".*shared.weight$": Split(world_size=world_size, dim=1),
+            r".*lm_head\.weight$": Split(world_size=world_size, dim=1),
             # note: ^-- lm_head.weight tied with word embeddings
         },
         input_rules={
             r".*SelfAttention$": {"past_key_value": select_kv_for_rank},
-            r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
+            r".*lm_head$": {0: Split(world_size=world_size, dim=-1)},  # note: we need to split lm_head inputs because
             # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
         output_rules={

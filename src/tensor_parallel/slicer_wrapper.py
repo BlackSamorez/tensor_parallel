@@ -55,66 +55,6 @@ class Config:
             all_rules[i] = dict((re.compile(pattern), actions) for pattern, actions in rule_set.items())
         self.state_rules, self.input_rules, self.output_rules, self.attr_rules = all_rules
 
-    @classmethod
-    def get_default_config(cls, module: nn.Module, device_ids: Sequence[torch.device]) -> Config:
-        """Make a generic config that wraps individual linear, embedding and convolutional layers"""
-        emb_weights = {m.weight for m in module.modules() if isinstance(m, (nn.Embedding, nn.EmbeddingBag))}
-
-        state_rules = {}
-        input_rules = {}
-        output_rules = {}
-        for name, module in module.named_modules():
-            if isinstance(module, (nn.Embedding, nn.EmbeddingBag)):
-                assert module.max_norm is None or module.norm_type < 2
-                assert getattr(module, "bias", None) is None or module.bias.shape == module.embedding_dim
-                state_rules[f"^{name}.weight$"] = "split 1"
-                if hasattr(module, "bias"):
-                    state_rules[f"^{name}.bias$"] = "split 0"
-                output_rules[f"^{name}$"] = {0: "gather -1"}
-            elif isinstance(module, nn.Linear):
-                assert module.weight.shape == (module.out_features, module.in_features)
-                assert module.bias is None or module.bias.shape == (module.out_features,)
-                if module.weight not in emb_weights:  # regular linear layer
-                    state_rules[f"^{name}.(weight|bias)$"] = "split 0"
-                    output_rules[f"^{name}$"] = {0: "gather -1"}
-                else:
-                    # linear weight tied with embeddings; this is a popular special case for language models;
-                    # since embedding weight will be sliced over dim 1, we should adapt to the input-sliced weight
-                    input_rules[f"^{name}$"] = {0: "split -1"}
-                    output_rules[f"^{name}$"] = {0: "sum"}
-                    if module.bias is not None:
-                        state_rules[f"^{name}.bias$"] = "scale"
-            elif isinstance(module, conv._ConvNd) and module.groups == 1:
-                shape = [module.out_channels, module.in_channels] + list(module.kernel_size)
-                shape[:2] = shape[:2][::-1] if module.transposed else shape[:2]
-                shape = tuple(shape)
-                assert module.weight.shape == shape, f"{module.weight.shape} != {shape}"
-                assert module.bias is None or module.bias.shape == (module.out_channels,), module.bias.shape
-                state_rules[f"^{name}.weight$"] = "split 1" if module.transposed else "split 0"
-                if module.bias is not None:
-                    state_rules[f"^{name}.bias$"] = "split 0"
-                output_rules[f"^{name}$"] = {0: "gather 1"}
-            elif isinstance(module, conv._ConvNd) and module.groups != 1:
-                # group conv: split each group individually over input channels to avoid changing module.groups
-                groups = module.groups
-                shape = [module.out_channels // groups, module.in_channels // groups] + list(module.kernel_size)
-                shape[:2] = shape[:2][::-1] if module.transposed else shape[:2]
-                shape[0] *= module.groups
-                shape = tuple(shape)
-                assert module.weight.shape == shape, f"{module.weight.shape} != {shape}"
-                assert module.bias is None or module.bias.shape == (module.out_channels,), module.bias.shape
-                if not module.transposed:
-                    state_rules[f"^{name}.weight$"] = "split 1"
-                else:
-                    state_rules[f"^{name}.weight$"] = partial(
-                        _split_groups, dim=0, groups=groups, world_size=len(device_ids)
-                    )
-                if module.bias is not None:
-                    state_rules[f"^{name}.bias$"] = "scale"
-                input_rules[f"^{name}$"] = {0: partial(_split_groups, dim=1, groups=groups, world_size=len(device_ids))}
-                output_rules[f"^{name}$"] = {0: "sum"}
-        return cls(state_rules, input_rules, output_rules, {})
-
     def create_collective_ops(self, devices: Sequence[torch.device]):
         """
         Return a copy of config with thread-parallel collective operations, such as AllGather and AllReduce
@@ -226,15 +166,7 @@ def find_matching_actions(action_type: str, name: str, rules: ModuleRules) -> Di
 def apply_action(input: torch.Tensor, action: StateAction, *, rank: int, world_size: int):
     if isinstance(action, tuple):
         action = action[0]  # get splitting action
-    if callable(action):
-        return action(input, rank=rank)  # allreduce/allgather or a custom user-defined callable
-    action_type, *opts = action.split()
-    if action_type == "split":
-        dim = int(opts[0])
-        return torch.tensor_split(input, world_size, dim=dim)[rank]
-    if action_type == "scale":
-        return input / world_size
-    raise Exception(f"unexpected action {action_type}; supported actions: split, scale, or custom user-defined")
+    return action(input, rank=rank)  # allreduce/allgather or a custom user-defined callable
 
 
 def apply_inverse_action(tensors: Sequence[torch.Tensor], action: StateAction, world_size: int) -> torch.Tensor:

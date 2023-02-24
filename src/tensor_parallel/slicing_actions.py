@@ -7,8 +7,7 @@ import torch
 from torch import Tensor
 
 from tensor_parallel.communications import CollectiveOperation
-from tensor_parallel.slicer_wrapper import Action
-from tensor_parallel.tensor_parallel import PerDeviceTensors
+from tensor_parallel.per_device_tensors import PerDeviceTensors
 
 
 class Action(ABC):
@@ -18,6 +17,8 @@ class Action(ABC):
 
 
 class Split(Action):
+    """XXXXXXXXXXXXXXX -> (world_size = 3) -> [XXXXX, XXXXX, XXXXX]"""
+
     def __init__(self, world_size: int, dim: int):
         super().__init__()
         self.world_size = world_size
@@ -37,6 +38,8 @@ class Scale(Action):
 
 
 class SplitInChunks(Action):
+    """AAABBBCCCDDDEEE -> (world_size = 3, chunk_size = 3) -> [AAABBB, CCCDDD, EEE]"""
+
     def __init__(self, world_size: int, dim: int, chunk_size: int, optional: bool = False):
         super().__init__()
         self.world_size = world_size
@@ -59,6 +62,8 @@ class SplitInChunks(Action):
 
 
 class SplitNumChunks(Action):
+    """5 -> (world_size = 3) -> [2, 2 ,1]"""
+
     def __init__(self, world_size: int):
         super().__init__()
         self.world_size = world_size
@@ -68,6 +73,8 @@ class SplitNumChunks(Action):
 
 
 class SplitDimInChunks(Action):
+    """15 -> (world_size = 3, chunk_size = 3) -> [6, 6, 3]"""
+
     def __init__(self, world_size: int, num_chunks: int):
         super().__init__()
         self.world_size = world_size
@@ -77,6 +84,24 @@ class SplitDimInChunks(Action):
         return torch.empty(self.num_chunks, device="meta").tensor_split(self.world_size)[rank].numel() * (
             inner_dim // self.num_chunks
         )
+
+
+class SplitInsideChunks(Action):
+    """AAABBBCCCDDDEEE -> (world_size = 3, num_chunks = 5) -> [ABCDE, ABCDE, ABCDE]"""
+
+    def __init__(self, world_size: int, dim: int, num_chunks: int) -> None:
+        super().__init__()
+        self.world_size = world_size
+        self.dim = dim
+        self.num_chunks = num_chunks
+
+    def __call__(self, input: Tensor, rank: int) -> Tensor:
+        shape = list(input.shape)
+        shape[self.dim] = shape[self.dim] // self.num_chunks
+        shape.insert(self.dim, self.num_chunks)
+        grouped_tensor = input.reshape(*shape)
+        grouped_shard = torch.tensor_split(grouped_tensor, self.world_size, dim=self.dim + 1)[rank]
+        return torch.flatten(grouped_shard, start_dim=self.dim, end_dim=self.dim + 1)
 
 
 class GatherKV(Action):

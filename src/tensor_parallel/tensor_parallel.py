@@ -13,6 +13,7 @@ from torch._utils import ExceptionWrapper, _get_all_device_indices, _get_device_
 from torch.cuda.amp import autocast
 from torch.nn.parallel import parallel_apply
 
+from tensor_parallel.autoconfig import get_default_config
 from tensor_parallel.cross_device_ops import broadcast_coalesced
 from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE, Config, apply_inverse_action
 from tensor_parallel.utils import nested_flatten, nested_pack
@@ -59,7 +60,7 @@ class TensorParallel(nn.Module):
             return
 
         if tensor_parallel_config is None:
-            tensor_parallel_config = Config.get_default_config(module, self.devices)
+            tensor_parallel_config = get_default_config(module, self.devices)
             logger.info("Using automatic config: sharding individual linear/conv/emb layers")
 
         self.tensor_parallel_config = tensor_parallel_config
@@ -261,24 +262,3 @@ def check_device_ids(device_ids: Optional[Sequence[torch.device]]) -> Sequence[t
     if device_ids is None:
         device_ids = _get_all_device_indices() if torch.cuda.is_available() else []
     return tuple(map(canonicalize_device, device_ids))
-
-
-class PerDeviceTensors:
-    """tensors located on different deviecs that will *not* be broadcasted when passed to TensorParallel.forward"""
-
-    def __init__(self, *tensors: torch.Tensor):
-        # note: this will not be broadcasted because broadcast_coalesced does not broadcast class properties
-        self.tensors = tuple(tensors)
-
-    def __getitem__(self, i: int):
-        return self.tensors[i]
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.tensors})"
-
-    @property
-    def shape(self):
-        return self.tensors[0].shape
-
-    def size(self, dim: int):
-        return self.tensors[0].size(dim)
