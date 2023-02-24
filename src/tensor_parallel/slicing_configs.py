@@ -295,8 +295,8 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
 
 
 PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
-    "BloomModel": get_bloom_config,
-    "T5ForConditionalGeneration": get_t5_config,
-    "BertForMaskedLM": get_bert_config,
-    "GPT2LMHeadModel": get_gpt2_config,
+    "bloom": get_bloom_config,
+    "t5": get_t5_config,
+    "bert": get_bert_config,
+    "gpt2": get_gpt2_config,
 }

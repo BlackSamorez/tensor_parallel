@@ -28,14 +28,9 @@ def find_predefined_tensor_parallel_config(
     model_config: PretrainedConfig, device_ids: Optional[Sequence[torch.device]]
 ) -> Optional[Config]:
     device_ids = check_device_ids(device_ids)
-    if len(model_config.architectures) != 1:
-        logger.warning(
-            f"Using automatic config: no tensor parallel config provided and model architectures list is ambigious: {model_config.architectures}"
-        )
-        return None
 
     try:
-        return PREDEFINED_CONFIGS[model_config.architectures[0]](model_config, device_ids)
+        return PREDEFINED_CONFIGS[model_config.model_type](model_config, device_ids)
     except KeyError:
         logger.warning(
             "Using automatic config: tensor parallel config not provided and no custom config registered for the model"
