@@ -112,8 +112,12 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
         if kvs[0] is None:
             return None
         else:
-            kvs = kvs[0]
-            return (kvs[0][rank], kvs[1][rank])
+            keys = kvs[0][0]
+            values = kvs[0][1]
+            return (
+                torch.tensor_split(keys, world_size, dim=1)[rank],
+                torch.tensor_split(values, world_size, dim=1)[rank],
+            )
 
     return Config(
         state_rules={
