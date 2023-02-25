@@ -257,13 +257,23 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
             r".*c_fc\.bias$": "split 0",
             r".*mlp\.c_proj\.weight$": "split 0",
             r".*mlp\.c_proj\.bias$": "scale",
+            # GPT2Model
+            r".*wte\.weight$": "split 1",
+            r".*wpe\.weight$": "split 1",
+            # GPT2LMHeadModel
+            # note: ^-- lm_head.weight is tied with word_embeddings
         },
         input_rules={
             r".*[0-9]\.attn$": {"layer_past": select_kv_for_rank},
+            r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
+            # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
         output_rules={
             r".*[0-9]\.attn$": {0: "sum", 1: gather_kv_across_ranks},
             r".*mlp$$": {0: "sum"},
+            r".*wte$": {0: "gather -1"},
+            r".*wpe$": {0: "gather -1"},
+            r".*lm_head$": {0: "sum"},
         },
         attr_rules={
             r".*attn\.c_attn$": {
