@@ -10,7 +10,7 @@ from itertools import chain
 from typing import Callable, Dict, Sequence
 
 import torch
-from transformers import BloomConfig, PretrainedConfig, T5Config
+from transformers import BloomConfig, PretrainedConfig, T5Config, BertConfig
 
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.slicer_wrapper import Config
@@ -164,7 +164,37 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
     )
 
 
+def get_bert_config(model_config: BertConfig, devices: Sequence[torch.device]) -> Config:
+    world_size = len(devices)
+    num_heads = model_config.num_attention_heads
+    head_dim = int(model_config.hidden_size / model_config.num_attention_heads)
+
+    return Config(
+        state_rules={
+            r".*self\.query\.(weight|bias)$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r"self\.key\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r"self\.value\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            ".*attention\.output\.dense\.weight$": partial(
+                split_heads, dim=1, head_dim=head_dim, world_size=world_size
+            ),
+            ".*attention\.output\.dense\.bias$": "scale",
+            ".*intermediate\.dense\.(weight|bias)$": "split 0",
+            ".*[0-9]\.output\.dense\.weight$": "split 1",
+            ".*[0-9]\.output\.dense\.bias$": "scale",
+        },
+        input_rules={},
+        output_rules={r".*attention\.output\.dense$": {0: "sum"}, r".*[0-9]\.output\.dense$": {0: "sum"}},
+        attr_rules={
+            r".*attention\.self$": {
+                "num_attention_heads": partial(split_num_heads, world_size=world_size),
+                "all_head_size": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
+            },
+        },
+    )
+
+
 PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "BloomModel": get_bloom_config,
     "T5ForConditionalGeneration": get_t5_config,
+    "BertForMaskedLM": get_bert_config,
 }

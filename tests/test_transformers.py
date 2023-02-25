@@ -3,7 +3,7 @@ from typing import Sequence
 import pytest
 import torch
 import transformers
-from transformers import AutoModelForCausalLM, AutoTokenizer, T5ForConditionalGeneration
+from transformers import AutoModelForCausalLM, AutoTokenizer, T5ForConditionalGeneration, BertModel
 
 from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel, tensor_parallel
 from tensor_parallel.pretrained_model import find_predefined_tensor_parallel_config
@@ -70,6 +70,35 @@ def test_forward_t5_like(use_config, devices, model_name):
     torch.testing.assert_close(out1_ref.logits, out1.logits, atol=3e-3, rtol=1e-05)
     torch.testing.assert_close(out2_ref.logits, out2.logits, atol=3e-3, rtol=1e-05)
     torch.testing.assert_close(out3_ref.logits, out3.logits, atol=3e-3, rtol=1e-05)
+
+
+@pytest.mark.parametrize("use_config", [False, True])
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased"])
+def test_forward_bert_like(use_config, devices, model_name):
+    model = BertModel.from_pretrained(model_name).to(devices[0])
+
+    inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
+    inp2 = torch.randint(1, 1000, size=(2, 1), device=devices[0])
+    inp3 = torch.randint(1, 1000, size=(2, 2), device=devices[0])
+
+    out1_ref = model(inp1, output_hidden_states=True)
+    out2_ref = model(inp2, output_hidden_states=True)
+    out3_ref = model(inp3, output_hidden_states=True)
+
+    tp_config = None
+    if use_config:
+        tp_config = find_predefined_tensor_parallel_config(model.config, devices)
+    model_tp = TensorParallel(model, devices, config=tp_config)
+    del model
+
+    out1 = model_tp(inp1, output_hidden_states=True)
+    out2 = model_tp(inp2, output_hidden_states=True)
+    out3 = model_tp(inp3, output_hidden_states=True)
+
+    torch.testing.assert_close(out1_ref.hidden_states[-1], out1.hidden_states[-1], atol=3e-3, rtol=1e-05)
+    torch.testing.assert_close(out2_ref.hidden_states[-1], out2.hidden_states[-1], atol=3e-3, rtol=1e-05)
+    torch.testing.assert_close(out3_ref.hidden_states[-1], out3.hidden_states[-1], atol=3e-3, rtol=1e-05)
 
 
 @pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {}, {"top_p": 0.5}])
