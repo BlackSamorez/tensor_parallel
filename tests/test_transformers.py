@@ -102,8 +102,8 @@ def test_forward_bert_like(use_config, devices, model_name):
 
 
 @pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {}, {"top_p": 0.5}])
-@pytest.mark.parametrize("model_name", ["t5-small", "bigscience/bloom-560m"])
-@pytest.mark.parametrize("devices", [("cpu",), ("cpu",) * 2, ("cpu",) * 3])
+@pytest.mark.parametrize("model_name", ["t5-small", "bigscience/bloom-560m", "gpt2"])
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 def test_generate(generate_kwargs, model_name, devices):
     def _generate_scores(model, tokenizer, prompt, generate_kwargs):
         scores_tuple = model.generate(
