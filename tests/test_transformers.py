@@ -3,7 +3,7 @@ from typing import Sequence
 import pytest
 import torch
 import transformers
-from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, T5ForConditionalGeneration
 
 from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel, tensor_parallel
 from tensor_parallel.pretrained_model import find_predefined_tensor_parallel_config
@@ -99,11 +99,7 @@ def test_generate(generate_kwargs, model_name, devices):
             )
 
     if model_name == "t5-small":
-        model = (
-            transformers.T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True)
-            .float()
-            .to(devices[0])
-        )
+        model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
     else:
         model = (
             transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
@@ -126,11 +122,7 @@ def test_generate(generate_kwargs, model_name, devices):
 @pytest.mark.parametrize("sharded", [False, True])
 def test_encoder(use_predefined_config, model_name, sharded):
     devices = ["cpu"] * 2
-    model = (
-        transformers.T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True)
-        .float()
-        .to(devices[0])
-    )
+    model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 
     input = torch.randint(1, 1000, size=(2, 3), device=devices[0])
     out_ref = model.get_encoder()(input)
