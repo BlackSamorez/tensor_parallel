@@ -3,7 +3,7 @@ from typing import Sequence
 import pytest
 import torch
 import transformers
-from transformers import AutoModelForCausalLM, AutoTokenizer, T5ForConditionalGeneration, BertModel
+from transformers import AutoModelForCausalLM, AutoTokenizer, BertModel, T5ForConditionalGeneration
 
 from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel, tensor_parallel
 from tensor_parallel.pretrained_model import find_predefined_tensor_parallel_config

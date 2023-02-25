@@ -10,7 +10,7 @@ from itertools import chain
 from typing import Callable, Dict, Sequence
 
 import torch
-from transformers import BloomConfig, PretrainedConfig, T5Config, BertConfig
+from transformers import BertConfig, BloomConfig, PretrainedConfig, T5Config
 
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.slicer_wrapper import Config
