@@ -221,21 +221,57 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
     num_heads = model_config.num_attention_heads
     head_dim = model_config.hidden_size // model_config.num_attention_heads
 
+    def split_gpt2_qkv(tensor: torch.Tensor, rank: int, dim: int, world_size: int, head_dim: int, num_parts: int):
+        assert tensor.shape[dim] % num_parts == 0
+        dims = list(tensor.shape)
+        dims.insert(-1, num_parts)
+        dims[-1] //= num_parts
+
+        tensor = tensor.view(*dims)
+        return torch.cat(
+            [
+                split_heads(tensor[..., i, :], dim=-1, head_dim=head_dim, rank=rank, world_size=world_size)
+                for i in range(num_parts)
+            ],
+            dim=-1,
+        )
+
     return Config(
         state_rules={
             # GPT2Attention
-            r".*c_attn\.(weight|bias)$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-            r".*q_attn\.(weight|bias)$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-            r".*attn\.c_proj\.weight$": partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
+            r".*c_attn\.weight$": partial(split_gpt2_qkv, dim=1, head_dim=head_dim, num_parts=3, world_size=world_size),
+            r".*c_attn\.bias$": partial(split_gpt2_qkv, dim=0, head_dim=head_dim, num_parts=3, world_size=world_size),
+            r".*q_attn\.weight$": partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
+            r".*q_attn\.bias$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r".*attn\.c_proj\.weight$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
             r".*attn\.c_proj\.bias$": "scale",
             # GPT2MLP
-            r".*c_fc\.(weight|bias)$": "split 0",
-            r".*mlp\.c_proj\.weight$": "split 1",
+            r".*c_fc\.weight$": "split 1",
+            r".*c_fc\.bias$": "split 0",
+            r".*mlp\.c_proj\.weight$": "split 0",
             r".*mlp\.c_proj\.bias$": "scale",
         },
         input_rules={},
-        output_rules={},
-        attr_rules={},
+        output_rules={
+            r".*[0-9]\.attn$": {0: "sum"},
+            r".*mlp$$": {0: "sum"},
+        },
+        attr_rules={
+            r".*attn\.c_attn$": {
+                "nf": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
+            },
+            r".*attn\.q_attn$": {
+                "nf": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
+            },
+            r".*mlp\.c_fc$": {
+                "nf": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
+            },
+            r".*[0-9]\.attn$": {
+                "embed_dim": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
+                "num_heads": partial(split_num_heads, world_size=world_size),
+                "split_size": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
+            },
+        },
     )
 
 
