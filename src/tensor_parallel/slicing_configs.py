@@ -174,13 +174,13 @@ def get_bert_config(model_config: BertConfig, devices: Sequence[torch.device]) -
             r".*self\.query\.(weight|bias)$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
             r"self\.key\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
             r"self\.value\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-            ".*attention\.output\.dense\.weight$": partial(
+            r".*attention\.output\.dense\.weight$": partial(
                 split_heads, dim=1, head_dim=head_dim, world_size=world_size
             ),
-            ".*attention\.output\.dense\.bias$": "scale",
-            ".*intermediate\.dense\.(weight|bias)$": "split 0",
-            ".*[0-9]\.output\.dense\.weight$": "split 1",
-            ".*[0-9]\.output\.dense\.bias$": "scale",
+            r".*attention\.output\.dense\.bias$": "scale",
+            r".*intermediate\.dense\.(weight|bias)$": "split 0",
+            r".*[0-9]\.output\.dense\.weight$": "split 1",
+            r".*[0-9]\.output\.dense\.bias$": "scale",
         },
         input_rules={},
         output_rules={r".*attention\.output\.dense$": {0: "sum"}, r".*[0-9]\.output\.dense$": {0: "sum"}},
