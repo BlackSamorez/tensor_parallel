@@ -11,7 +11,7 @@ from tensor_parallel.pretrained_model import find_predefined_tensor_parallel_con
 
 @pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize("model_name", ["bigscience/bloom-560m", "sshleifer/tiny-gpt2"])
+@pytest.mark.parametrize("model_name", ["bigscience/bloom-560m", "gpt2"])
 def test_forward_gpt2_like(use_config, devices, model_name):
     model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 
