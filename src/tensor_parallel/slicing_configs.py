@@ -84,11 +84,16 @@ def split_heads(tensor: torch.Tensor, *, dim: int, head_dim: int, rank: int, wor
     shape[dim] //= head_dim
     shape.insert(dim + 1, head_dim)
     tensor_part = tensor.reshape(shape).tensor_split(world_size, dim=dim)[rank].flatten(dim, dim + 1)
+    if tensor_part.shape[dim] == 0:
+        shape = list(tensor_part.shape)
+        shape[dim] = 1
+        return torch.zeros(shape)
     return tensor_part
 
 
 def split_num_heads(num_heads: int, *, rank: int, world_size: int):
-    return torch.empty(num_heads, device="meta").tensor_split(world_size)[rank].numel()
+    assigned_num_heads = torch.empty(num_heads, device="meta").tensor_split(world_size)[rank].numel()
+    return assigned_num_heads if assigned_num_heads != 0 else 1
 
 
 def split_inner_dim(inner_dim: int, *, rank: int, num_heads: int, world_size: int):
@@ -231,14 +236,15 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
         dims.insert(-1, num_parts)
         dims[-1] //= num_parts
 
-        tensor = tensor.view(*dims)
-        return torch.cat(
+        some_tensor = tensor.view(*dims)
+        new_tensor = torch.cat(
             [
-                split_heads(tensor[..., i, :], dim=-1, head_dim=head_dim, rank=rank, world_size=world_size)
+                split_heads(some_tensor[..., i, :], dim=-1, head_dim=head_dim, rank=rank, world_size=world_size)
                 for i in range(num_parts)
             ],
             dim=-1,
         )
+        return new_tensor
 
     return Config(
         state_rules={
@@ -270,7 +276,7 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
                 "nf": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
             },
             r".*mlp\.c_fc$": {
-                "nf": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
+                "nf": partial(split_num_heads, world_size=world_size),
             },
             r".*[0-9]\.attn$": {
                 "embed_dim": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
