@@ -10,7 +10,7 @@ from itertools import chain
 from typing import Callable, Dict, Sequence
 
 import torch
-from transformers import BertConfig, BloomConfig, PretrainedConfig, T5Config
+from transformers import BertConfig, BloomConfig, GPT2Config, PretrainedConfig, T5Config
 
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.slicer_wrapper import Config
@@ -43,14 +43,17 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
 
     return Config(
         state_rules={
+            # BloomAttention
             r".*self_attention\.query_key_value\.(weight|bias)$": partial(
                 split_heads, dim=0, head_dim=head_dim * 3, world_size=world_size
             ),
             r".*self_attention\.dense\.weight$": partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
             r".*self_attention\.dense\.bias$": "scale",
+            # BloomMLP
             r".*mlp\.dense_h_to_4h\.(weight|bias)$": "split 0",
             r".*mlp\.dense_4h_to_h\.weight$": "split 1",
             r".*mlp\.dense_4h_to_h\.bias$": "scale",
+            # BloomModel
             r".*word_embeddings.weight$": "split 1",
             # note: ^-- lm_head.weight is tied with word_embeddings
         },
@@ -124,6 +127,7 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
 
     return Config(
         state_rules={
+            # T5Attention
             r".*SelfAttention\.q\.(weight|bias)$": partial(
                 split_heads, dim=0, head_dim=head_dim, world_size=world_size
             ),
@@ -135,10 +139,13 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
             ),
             r".*relative_attention_bias\.weight$": "split 1",
             r".*SelfAttention\.o\.weight$": partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
+            # T5DenseGatedActDense
             r".*DenseReluDense\.wi\.weight$": "split 0",
             r".*DenseReluDense\.wi_0\.weight$": "split 0",
             r".*DenseReluDense\.wi_1\.weight$": "split 0",
+            # T5DenseActDense
             r".*DenseReluDense\.wo\.weight$": "split 1",
+            # T5Model
             r".*shared.weight$": "split 1",
             r".*lm_head\.weight$": "split 1",
             # note: ^-- lm_head.weight tied with word embeddings
@@ -171,6 +178,7 @@ def get_bert_config(model_config: BertConfig, devices: Sequence[torch.device]) -
 
     return Config(
         state_rules={
+            # BertAttention
             r".*self\.query\.(weight|bias)$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
             r"self\.key\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
             r"self\.value\.(weight|bias)": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
@@ -178,12 +186,27 @@ def get_bert_config(model_config: BertConfig, devices: Sequence[torch.device]) -
                 split_heads, dim=1, head_dim=head_dim, world_size=world_size
             ),
             r".*attention\.output\.dense\.bias$": "scale",
+            # BertIntermediate
             r".*intermediate\.dense\.(weight|bias)$": "split 0",
+            # BertOutput
             r".*[0-9]\.output\.dense\.weight$": "split 1",
             r".*[0-9]\.output\.dense\.bias$": "scale",
+            # BertEmbeddings
+            r".*word_embeddings\.weight$": "split 1",
+            r".*word_embeddings\.bias$": "split 0",
+            r".*position_embeddings\.weight$": "split 1",
+            r".*position_embeddings\.bias$": "split 0",
+            r".*token_type_embeddings\.weight$": "split 1",
+            r".*token_type_embeddings\.bias$": "split 0",
         },
         input_rules={},
-        output_rules={r".*attention\.output\.dense$": {0: "sum"}, r".*[0-9]\.output\.dense$": {0: "sum"}},
+        output_rules={
+            r".*attention\.output\.dense$": {0: "sum"},
+            r".*[0-9]\.output\.dense$": {0: "sum"},
+            r".*word_embeddings$": {0: "gather -1"},
+            r".*position_embeddings$": {0: "gather -1"},
+            r".*token_type_embeddings$": {0: "gather -1"},
+        },
         attr_rules={
             r".*attention\.self$": {
                 "num_attention_heads": partial(split_num_heads, world_size=world_size),
@@ -193,8 +216,32 @@ def get_bert_config(model_config: BertConfig, devices: Sequence[torch.device]) -
     )
 
 
+def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -> Config:
+    world_size = len(devices)
+    num_heads = model_config.num_attention_heads
+    head_dim = model_config.hidden_size // model_config.num_attention_heads
+
+    return Config(
+        state_rules={
+            # GPT2Attention
+            r".*c_attn\.(weight|bias)$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r".*q_attn\.(weight|bias)$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r".*attn\.c_proj\.weight$": partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
+            r".*attn\.c_proj\.bias$": "scale",
+            # GPT2MLP
+            r".*c_fc\.(weight|bias)$": "split 0",
+            r".*mlp\.c_proj\.weight$": "split 1",
+            r".*mlp\.c_proj\.bias$": "scale",
+        },
+        input_rules={},
+        output_rules={},
+        attr_rules={},
+    )
+
+
 PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "BloomModel": get_bloom_config,
     "T5ForConditionalGeneration": get_t5_config,
     "BertForMaskedLM": get_bert_config,
+    "GPT2LMHeadModel": get_gpt2_config,
 }
