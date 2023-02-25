@@ -198,11 +198,8 @@ def get_bert_config(model_config: BertConfig, devices: Sequence[torch.device]) -
             r".*[0-9]\.output\.dense\.bias$": "scale",
             # BertEmbeddings
             r".*word_embeddings\.weight$": "split 1",
-            r".*word_embeddings\.bias$": "split 0",
             r".*position_embeddings\.weight$": "split 1",
-            r".*position_embeddings\.bias$": "split 0",
             r".*token_type_embeddings\.weight$": "split 1",
-            r".*token_type_embeddings\.bias$": "split 0",
         },
         input_rules={},
         output_rules={
