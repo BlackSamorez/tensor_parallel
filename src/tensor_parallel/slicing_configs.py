@@ -221,6 +221,10 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
     num_heads = model_config.num_attention_heads
     head_dim = model_config.hidden_size // model_config.num_attention_heads
 
+    gather_kv_across_ranks = CollectiveOperation(
+        world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
+    )  # this operation ensures that we get attention cache for all heads on each device
+
     def split_gpt2_qkv(tensor: torch.Tensor, rank: int, dim: int, world_size: int, head_dim: int, num_parts: int):
         assert tensor.shape[dim] % num_parts == 0
         dims = list(tensor.shape)
@@ -251,9 +255,11 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
             r".*mlp\.c_proj\.weight$": "split 0",
             r".*mlp\.c_proj\.bias$": "scale",
         },
-        input_rules={},
+        input_rules={
+            r".*[0-9]\.attn$": {"layer_past": select_kv_for_rank},
+        },
         output_rules={
-            r".*[0-9]\.attn$": {0: "sum"},
+            r".*[0-9]\.attn$": {0: "sum", 1: gather_kv_across_ranks},
             r".*mlp$$": {0: "sum"},
         },
         attr_rules={
