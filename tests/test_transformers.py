@@ -9,6 +9,38 @@ from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel, tenso
 from tensor_parallel.pretrained_model import find_predefined_tensor_parallel_config
 
 
+@pytest.mark.parametrize(
+    "model_classes",
+    [
+        [
+            transformers.AutoModel,
+            transformers.AutoModelForCausalLM,
+            transformers.AutoModelForSequenceClassification,
+            transformers.AutoModelForTokenClassification,
+        ]
+    ],
+)
+@pytest.mark.parametrize("model_name", ["bigscience/bloom-560m", "gpt2"])
+def test_multipurpose_configs(model_classes, model_name):
+    def all_equal(iterator):
+        iterator = iter(iterator)
+        try:
+            first = next(iterator)
+        except StopIteration:
+            return True
+        return all(first == x for x in iterator)
+
+    devices = ("cpu",) * 2
+    tensor_parallel_configs = []
+    for model_class in model_classes:
+        model = model_class.from_pretrained(model_name)
+        tensor_parallel_configs.append(find_predefined_tensor_parallel_config(model.config, devices))
+
+    assert all_equal(
+        map(lambda x: x.attr_rules.keys(), tensor_parallel_configs)
+    )  # basically asserting that all of those have the same config
+
+
 @pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bigscience/bloom-560m", "gpt2"])
