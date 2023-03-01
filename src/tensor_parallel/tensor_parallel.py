@@ -225,3 +225,6 @@ class PerDeviceTensors:
     @property
     def shape(self):
         return self.tensors[0].shape
+
+    def size(self, dim: int):
+        return self.tensors[0].size(dim)
