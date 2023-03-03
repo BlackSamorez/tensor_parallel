@@ -141,7 +141,7 @@ class TensorParallel(nn.Module):
 
         for unsharded_name in unsharded_names:
             for pattern, action in self.config.state_rules.items():
-                if pattern.search(name) is not None:
+                if pattern.search(unsharded_name) is not None:
                     tensor_shards = {
                         name: tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
                     }

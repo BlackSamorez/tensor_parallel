@@ -239,6 +239,7 @@ def apply_inverse_action(tensors: torch.Tensor, action: StateAction, world_size:
         return torch.cat([tensor.cpu() for tensor in tensors], dim=dim)
     if action_type == "scale":
         return tensors[0] * world_size
+    raise Exception(f"Unexpected inverse action {action_type}; supported actions: split, scale, or custom user-defined")
 
 
 def create_collective_ops(rules: dict, devices: Sequence[torch.device]):

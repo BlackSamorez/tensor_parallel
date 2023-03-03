@@ -46,11 +46,11 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
             # BloomAttention
             r".*self_attention\.query_key_value\.(weight|bias)$": (
                 partial(split_heads, dim=0, head_dim=head_dim * 3, world_size=world_size),
-                "cat 0",
+                "split 0",
             ),
             r".*self_attention\.dense\.weight$": (
                 partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
-                "cat 1",
+                "split 1",
             ),
             r".*self_attention\.dense\.bias$": "scale",
             # BloomMLP
@@ -139,20 +139,20 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
             # T5Attention
             r".*SelfAttention\.q\.(weight|bias)$": (
                 partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "cat 0",
+                "split 0",
             ),
             r".*SelfAttention\.k\.(weight|bias)$": (
                 partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "cat 0",
+                "split 0",
             ),
             r".*SelfAttention\.v\.(weight|bias)$": (
                 partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "cat 0",
+                "split 0",
             ),
             r".*relative_attention_bias\.weight$": "split 1",
             r".*SelfAttention\.o\.weight$": (
                 partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
-                "cat 1",
+                "split 1",
             ),
             # T5DenseGatedActDense
             r".*DenseReluDense\.wi\.weight$": "split 0",
@@ -196,19 +196,19 @@ def get_bert_config(model_config: BertConfig, devices: Sequence[torch.device]) -
             # BertAttention
             r".*self\.query\.(weight|bias)$": (
                 partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "cat 0",
+                "split 0",
             ),
             r"self\.key\.(weight|bias)": (
                 partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "cat 0",
+                "split 0",
             ),
             r"self\.value\.(weight|bias)": (
                 partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "cat 0",
+                "split 0",
             ),
             r".*attention\.output\.dense\.weight$": (
                 partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
-                "cat 1",
+                "split 1",
             ),
             r".*attention\.output\.dense\.bias$": "scale",
             # BertIntermediate
@@ -268,17 +268,17 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
             # GPT2Attention
             r".*c_attn\.weight$": (
                 partial(split_gpt2_qkv, dim=1, head_dim=head_dim, num_parts=3, world_size=world_size),
-                "cat 1",
+                "split 1",
             ),
             r".*c_attn\.bias$": (
                 partial(split_gpt2_qkv, dim=0, head_dim=head_dim, num_parts=3, world_size=world_size),
-                "cat 0",
+                "split 0",
             ),
-            r".*q_attn\.weight$": (partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size), "cat 1"),
-            r".*q_attn\.bias$": (partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size), "cat 0"),
+            r".*q_attn\.weight$": (partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size), "split 1"),
+            r".*q_attn\.bias$": (partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size), "split 0"),
             r".*attn\.c_proj\.weight$": (
                 partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "cat 0",
+                "split 0",
             ),
             r".*attn\.c_proj\.bias$": "scale",
             # GPT2MLP
