@@ -139,11 +139,12 @@ class TensorParallel(nn.Module):
         shards_prefix = next(name for name, _ in state_dict.items() if "module_shards." in name)
         shards_prefix = shards_prefix[: shards_prefix.find("module_shards.") + len("module_shards.")]
 
+        # get names for desired tensors and where to find them (shards of zero-3)
         is_name_prefixed = {}
         for name, tensor in state_dict.items():
-            if name.startswith(shards_prefix + "0."):
+            if name.startswith(shards_prefix + "0."):  # dict entry is from shards
                 is_name_prefixed[name[len(shards_prefix) + 2 :]] = True
-            if not name.startswith(shards_prefix):
+            if not name.startswith(shards_prefix):  # dict entry is from zero-3
                 is_name_prefixed[name] = False
 
         for unsharded_name, is_prefixed in is_name_prefixed.items():
@@ -153,7 +154,7 @@ class TensorParallel(nn.Module):
                         name: tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
                     }
                     tensor_shards = dict(sorted(tensor_shards.items()))  # basically sort by shard number
-                    state_dict[unsharded_name] = apply_inverse_action(
+                    state_dict[unsharded_name] = apply_inverse_action(  # add aggregated tensor entry
                         list(tensor_shards.values()), action, len(self.module_shards)
                     )
                     break
@@ -162,6 +163,7 @@ class TensorParallel(nn.Module):
                     tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
                 )
             if is_prefixed:
+                # delete sharded tensor entries
                 for i in range(len(self.module_shards)):
                     del state_dict[f"{shards_prefix}{i}.{unsharded_name}"]
 
