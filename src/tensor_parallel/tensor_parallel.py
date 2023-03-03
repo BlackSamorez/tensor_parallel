@@ -131,12 +131,13 @@ class TensorParallel(nn.Module):
     def state_dict(self, *args, **kwargs):
         state_dict = super().state_dict(*args, **kwargs)
 
-        prefix = "module.module_shards.0."
+        shards_prefix = next(name for name, _ in state_dict.items() if "module_shards." in name)
+        shards_prefix = shards_prefix[: shards_prefix.find("module_shards.") + len("module_shards.")]
 
         unsharded_names = set()
         for name, tensor in state_dict.items():
-            if name.startswith(prefix):
-                unsharded_names.add(name[len(prefix) :])
+            if name.startswith(shards_prefix + "0."):
+                unsharded_names.add(name[len(shards_prefix) + 2 :])
 
         for unsharded_name in unsharded_names:
             for pattern, action in self.config.state_rules.items():
@@ -154,7 +155,7 @@ class TensorParallel(nn.Module):
                     tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
                 )
             for i in range(len(self.module_shards)):
-                del state_dict[f"module.module_shards.{i}." + unsharded_name]
+                del state_dict[f"{shards_prefix}{i}.{unsharded_name}"]
 
         for i in range(len(self.module_shards)):
             sanity_check_param_name = next(
