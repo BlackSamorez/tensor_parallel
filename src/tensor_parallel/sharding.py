@@ -3,6 +3,7 @@ Utility functions for training original model parameters
 """
 import functools
 import logging
+from operator import attrgetter
 import os
 from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -86,6 +87,17 @@ class Sharded(nn.ModuleList):
                 for submodule, param_name in occurences:
                     setattr(submodule, param_name, new_value)
         self._last_versions = tuple(flat_shard._version for flat_shard in self.flat_shards)
+
+    def _save_to_state_dict(self, destination, prefix, keep_vars):
+        self._maybe_fill_sharded_params()
+
+        for name in self.sharded_param_names:
+            for shard in self.module.module_shards:
+                try:
+                    destination[name] = attrgetter(name)(shard)
+                    break
+                except KeyError:
+                    pass
 
     @property
     def module_shards(self):
