@@ -223,7 +223,7 @@ def apply_action(input: torch.Tensor, action: StateAction, *, rank: int, world_s
     raise Exception(f"unexpected action {action_type}; supported actions: split, scale, or custom user-defined")
 
 
-def apply_inverse_action(tensors: torch.Tensor, action: StateAction, world_size: int) -> torch.Tensor:
+def apply_inverse_action(tensors: Sequence[torch.Tensor], action: StateAction, world_size: int) -> torch.Tensor:
     assert isinstance(action, str) or isinstance(
         action, tuple
     ), "No inverse state action specified for custom action. Can't aggregate shards"
@@ -232,7 +232,7 @@ def apply_inverse_action(tensors: torch.Tensor, action: StateAction, world_size:
         action = action[1]  # get aggregating action
 
     if callable(action):
-        return action(input)
+        return action(tensors, world_size)
     action_type, *opts = action.split()
     if action_type == "split":
         dim = int(opts[0])
