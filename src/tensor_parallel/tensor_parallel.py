@@ -131,15 +131,22 @@ class TensorParallel(nn.Module):
     def state_dict(self, *args, **kwargs):
         state_dict = super().state_dict(*args, **kwargs)
 
+        # fix names for zero-3'ed params that were inside _TensorParallelWrapper
+        names_inside_tp_wrapper = [name for name in state_dict.keys() if "tp_wrapped_module." in name]
+        for name in names_inside_tp_wrapper:
+            state_dict[name.replace("tp_wrapped_module.", "")] = state_dict.pop(name)
+
         shards_prefix = next(name for name, _ in state_dict.items() if "module_shards." in name)
         shards_prefix = shards_prefix[: shards_prefix.find("module_shards.") + len("module_shards.")]
 
-        unsharded_names = set()
+        is_name_prefixed = {}
         for name, tensor in state_dict.items():
             if name.startswith(shards_prefix + "0."):
-                unsharded_names.add(name[len(shards_prefix) + 2 :])
+                is_name_prefixed[name[len(shards_prefix) + 2 :]] = True
+            if not name.startswith(shards_prefix):
+                is_name_prefixed[name] = False
 
-        for unsharded_name in unsharded_names:
+        for unsharded_name, is_prefixed in is_name_prefixed.items():
             for pattern, action in self.config.state_rules.items():
                 if pattern.search(unsharded_name) is not None:
                     tensor_shards = {
@@ -154,8 +161,9 @@ class TensorParallel(nn.Module):
                 state_dict[unsharded_name] = next(
                     tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
                 )
-            for i in range(len(self.module_shards)):
-                del state_dict[f"{shards_prefix}{i}.{unsharded_name}"]
+            if is_prefixed:
+                for i in range(len(self.module_shards)):
+                    del state_dict[f"{shards_prefix}{i}.{unsharded_name}"]
 
         for i in range(len(self.module_shards)):
             sanity_check_param_name = next(
