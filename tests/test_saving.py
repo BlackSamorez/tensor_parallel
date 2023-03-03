@@ -5,7 +5,7 @@ from transformers import BertModel
 from tensor_parallel import Config, Sharded, TensorParallel
 
 
-@pytest.mark.parametrize("devices", [("cpu",) * 2])
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_zero_3(devices, model_name):
     model = BertModel.from_pretrained(model_name).to(devices[0])
