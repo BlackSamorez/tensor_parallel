@@ -24,7 +24,7 @@ def test_no_parallelism_zero_3(devices, model_name):
         torch.testing.assert_close(data, data_tp)
 
 
-@pytest.mark.parametrize("devices", [("cpu",) * 2])
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_parallelism_no_zero_3(devices, model_name):
     model = BertModel.from_pretrained(model_name).to(devices[0])
@@ -43,7 +43,7 @@ def test_parallelism_no_zero_3(devices, model_name):
         torch.testing.assert_close(data, data_tp)
 
 
-@pytest.mark.parametrize("devices", [("cpu",) * 2])
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_parallelism_zero_3(devices, model_name):
     model = BertModel.from_pretrained(model_name).to(devices[0])
