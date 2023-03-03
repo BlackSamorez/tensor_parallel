@@ -3,8 +3,8 @@ Utility functions for training original model parameters
 """
 import functools
 import logging
-from operator import attrgetter
 import os
+from operator import attrgetter
 from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 
 import torch
@@ -98,6 +98,13 @@ class Sharded(nn.ModuleList):
                     break
                 except KeyError:
                     pass
+
+    def state_dict(self, *args, **kwargs):
+        state_dict = super().state_dict(*args, **kwargs)
+        for i in range(len(self.flat_shards)):
+            flat_shard_name = next(name for name, _ in state_dict.items() if name.endswith(f"flat_shards.{i}"))
+            del state_dict[flat_shard_name]
+        return state_dict
 
     @property
     def module_shards(self):

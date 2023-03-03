@@ -14,7 +14,7 @@ from torch.cuda.amp import autocast
 from torch.nn.parallel import parallel_apply
 
 from tensor_parallel.cross_device_ops import broadcast_coalesced
-from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE, Config
+from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE, Config, apply_inverse_action
 from tensor_parallel.utils import nested_flatten, nested_pack
 
 logger = logging.getLogger(__file__)
@@ -50,6 +50,7 @@ class TensorParallel(nn.Module):
         self.all_cuda = all(device.type == "cuda" for device in self.devices)
         self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
         self.need_delayed_init = delay_init
+        self.config = config
         world_size = len(self.devices)
 
         if len(device_ids) <= 1:
@@ -126,6 +127,42 @@ class TensorParallel(nn.Module):
             return parallel_apply(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
         else:
             return parallel_apply_simple(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
+
+    def state_dict(self, *args, **kwargs):
+        state_dict = super().state_dict(*args, **kwargs)
+
+        prefix = "module.module_shards.0."
+
+        unsharded_names = set()
+        for name, tensor in state_dict.items():
+            if name.startswith(prefix):
+                unsharded_names.add(name[len(prefix) :])
+
+        for unsharded_name in unsharded_names:
+            for pattern, action in self.config.state_rules.items():
+                if pattern.search(name) is not None:
+                    tensor_shards = {
+                        name: tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
+                    }
+                    tensor_shards = dict(sorted(tensor_shards.items()))  # basically sort by shard number
+                    state_dict[unsharded_name] = apply_inverse_action(
+                        list(tensor_shards.values()), action, len(self.module_shards)
+                    )
+                    break
+            else:
+                state_dict[unsharded_name] = next(
+                    tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
+                )
+            for i in range(len(self.module_shards)):
+                del state_dict[f"module.module_shards.{i}." + unsharded_name]
+
+        for i in range(len(self.module_shards)):
+            sanity_check_param_name = next(
+                name for name, _ in state_dict.items() if name.endswith(f"_sanity_check_params.{i}")
+            )
+            del state_dict[sanity_check_param_name]
+
+        return state_dict
 
 
 def parallel_apply_simple(
