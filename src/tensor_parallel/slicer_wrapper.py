@@ -11,7 +11,7 @@ import re
 from copy import deepcopy
 from functools import partial
 from itertools import chain
-from typing import Callable, Dict, Sequence, Union
+from typing import Callable, Dict, Sequence, Tuple, Union
 
 import torch
 import torch.distributed
@@ -31,7 +31,8 @@ from tensor_parallel.communications import (
 Arg = Union[int, str]
 Pattern = Union[str, re.Pattern]
 Action = Union[str, Callable]  # actions describe what to do with tensors
-StateRules = Dict[Pattern, Action]  # state rules are pattern-matched actions on module state dict
+StateAction = Union[Action, Tuple[Action, Action]]  # actions describe what to do with tensors
+StateRules = Dict[Pattern, StateAction]  # state rules are pattern-matched actions on module state dict
 ModuleRules = Dict[Pattern, Dict[Arg, Action]]  # module rules are pattern-matched actions on inputs/outputs/attrs
 
 logger = logging.getLogger(__file__)
@@ -208,7 +209,9 @@ def find_matching_actions(action_type: str, name: str, rules: ModuleRules) -> Di
     return found_actions
 
 
-def apply_action(input: torch.Tensor, action: Action, *, rank: int, world_size: int):
+def apply_action(input: torch.Tensor, action: StateAction, *, rank: int, world_size: int):
+    if isinstance(action, tuple):
+        action = action[0]  # get splitting action
     if callable(action):
         return action(input, rank=rank)  # allreduce/allgather or a custom user-defined callable
     action_type, *opts = action.split()
@@ -217,10 +220,26 @@ def apply_action(input: torch.Tensor, action: Action, *, rank: int, world_size: 
         return torch.tensor_split(input, world_size, dim=dim)[rank]
     if action_type == "scale":
         return input / world_size
-    if action_type == "scale_int":
-        assert input % world_size == 0
-        return input // world_size
     raise Exception(f"unexpected action {action_type}; supported actions: split, scale, or custom user-defined")
+
+
+def apply_inverse_action(tensors: Sequence[torch.Tensor], action: StateAction, world_size: int) -> torch.Tensor:
+    assert isinstance(action, str) or isinstance(
+        action, tuple
+    ), "No inverse state action specified for custom action. Can't aggregate shards"
+
+    if isinstance(action, tuple):
+        action = action[1]  # get aggregating action
+
+    if callable(action):
+        return action(tensors, world_size)
+    action_type, *opts = action.split()
+    if action_type == "split":
+        dim = int(opts[0])
+        return torch.cat([tensor.cpu() for tensor in tensors], dim=dim)
+    if action_type == "scale":
+        return tensors[0] * world_size
+    raise Exception(f"Unexpected inverse action {action_type}; supported actions: split, scale, or custom user-defined")
 
 
 def create_collective_ops(rules: dict, devices: Sequence[torch.device]):
@@ -334,18 +353,21 @@ class _TensorParallelWrapper(nn.Module):
         world_size: int,
     ):
         super().__init__()
-        self.module = module
-        self.__dict__["module"] = module  # for it to be accessible without getattr
+        self.tp_wrapped_module = module
+        self.__dict__["tp_wrapped_module"] = module  # for it to be accessible without getattr
         self.input_actions, self.output_actions = input_actions, output_actions
         self.rank, self.world_size = rank, world_size
 
     def forward(self, *args, **kwargs):
         args, kwargs = process_input(self.input_actions, self.rank, self.world_size, *args, **kwargs)
-        output = self.module(*args, **kwargs)
+        output = self.tp_wrapped_module(*args, **kwargs)
         return process_output(output, self.output_actions, rank=self.rank, world_size=self.world_size)
 
     def __getattr__(self, attr):
-        return getattr(self.module, attr)
+        return getattr(self.tp_wrapped_module, attr)
+
+    def state_dict(self, *args, **kwargs):
+        return self.tp_wrapped_module.state_dict(*args, **kwargs)
 
 
 def _split_groups(tensor: torch.Tensor, dim: int, *, groups: int, rank: int, world_size: int) -> torch.Tensor:
