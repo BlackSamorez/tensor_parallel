@@ -10,7 +10,16 @@ from itertools import chain
 from typing import Callable, Dict, Sequence
 
 import torch
-from transformers import BertConfig, BloomConfig, CodeGenConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
+from transformers import (
+    BertConfig,
+    BloomConfig,
+    CodeGenConfig,
+    GPT2Config,
+    GPTNeoXConfig,
+    LLaMAConfig,
+    PretrainedConfig,
+    T5Config,
+)
 
 from tensor_parallel.aux_actions import (
     gather_kv,
@@ -354,6 +363,53 @@ def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.devi
     )
 
 
+def get_llama_config(model_config: LLaMAConfig, devices: Sequence[torch.device]) -> Config:
+    world_size = len(devices)
+    num_heads = model_config.num_attention_heads
+    head_dim = model_config.hidden_size // model_config.num_attention_heads
+
+    gather_kv_across_ranks = CollectiveOperation(
+        world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
+    )  # this operation ensures that we get attention cache for all heads on each device
+
+    return Config(
+        state_rules={
+            # LLaMAAttention
+            r".*self_attn\.q_proj\.weight$": (
+                partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+                "split 0",
+            ),
+            r".*self_attn\.k_proj\.weight$": (
+                partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+                "split 0",
+            ),
+            r".*self_attn\.v_proj\.weight$": (
+                partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+                "split 0",
+            ),
+            r".*self_attn\.o_proj\.weight$": (
+                partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
+                "split 1",
+            ),
+            # LLaMAFeedForward
+            r".*feed_forward\.w1\.weight$": "split 0",
+            r".*feed_forward\.w2\.weight$": "split 1",
+            r".*feed_forward\.w3\.weight$": "split 0",
+        },
+        input_rules={},
+        output_rules={
+            r".*self_attn$": {0: "sum", 2: gather_kv_across_ranks},
+            r".*feed_forward$": {0: "sum"},
+        },
+        attr_rules={
+            r".*self_attn$": {
+                "hidden_size": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
+                "num_heads": partial(split_num_heads, world_size=world_size),
+            }
+        },
+    )
+
+
 PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "bloom": get_bloom_config,
     "t5": get_t5_config,
@@ -361,4 +417,5 @@ PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "gpt2": get_gpt2_config,
     "gpt_neox": get_gpt_neox_config,
     "codegen": get_codegen_config,
+    "llama": get_llama_config,
 }
