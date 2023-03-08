@@ -399,7 +399,9 @@ def get_llama_config(model_config: LLaMAConfig, devices: Sequence[torch.device])
             r".*embed_tokens.weight$": "split 1",
             r".*lm_head\.weight$": "split 0",
         },
-        input_rules={},
+        input_rules={
+            r".*self_attn$": {"past_key_value": select_kv_for_rank},
+        },
         output_rules={
             r".*self_attn$": {0: "sum", 2: gather_kv_across_ranks},
             r".*feed_forward$": {0: "sum"},
