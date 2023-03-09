@@ -74,7 +74,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
 
     def state_dict(self, *args, **kwargs):
         state_dict = super().state_dict(*args, **kwargs)
-        if self.wrapped_model.preserve_shards_when_saving:
+        if isinstance(self.wrapped_model, TensorParallel) and self.wrapped_model.preserve_shards_when_saving:
             return state_dict
 
         prefix = kwargs["prefix"] if "prefix" in kwargs else ""
