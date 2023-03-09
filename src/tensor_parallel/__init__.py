@@ -3,6 +3,7 @@ A prototype TensorParallel wrapper that works without torch.distributed.
 Splits linear, conv and some other layers between GPUs
 """
 
+from tensor_parallel.accelerate import save_preserving_shards
 from tensor_parallel.factory import tensor_parallel
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
 from tensor_parallel.sharding import Sharded
