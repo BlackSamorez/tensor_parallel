@@ -89,6 +89,10 @@ class TensorParallel(nn.Module):
         self._sanity_check_params = nn.ParameterList(
             [nn.Parameter(torch.empty(0, device=device), requires_grad=False) for device in self.devices]
         )
+        self.preserve_shards_when_saving: bool = False
+
+    def set_preserve_shards_when_saving(self, value: bool):
+        self.preserve_shards_when_saving = value
 
     def prepare_args_kwargs_for_forward(self, *args, **kwargs):
         args_and_kwargs = (args, kwargs)
@@ -130,6 +134,8 @@ class TensorParallel(nn.Module):
 
     def state_dict(self, *args, **kwargs):
         state_dict = super().state_dict(*args, **kwargs)
+        if self.preserve_shards_when_saving:
+            return state_dict
 
         # fix names for zero-3'ed params that were inside _TensorParallelWrapper
         names_inside_tp_wrapper = [name for name in state_dict.keys() if "tp_wrapped_module." in name]
@@ -138,6 +144,7 @@ class TensorParallel(nn.Module):
 
         shards_prefix = next(name for name, _ in state_dict.items() if "module_shards." in name)
         shards_prefix = shards_prefix[: shards_prefix.find("module_shards.") + len("module_shards.")]
+        module_prefix = shards_prefix[: -len("module_shards.")]
 
         # get names for desired tensors and where to find them (shards of zero-3)
         is_name_prefixed = {}
@@ -145,7 +152,7 @@ class TensorParallel(nn.Module):
             if name.startswith(shards_prefix + "0."):  # dict entry is from shards
                 is_name_prefixed[name[len(shards_prefix) + 2 :]] = True
             if not name.startswith(shards_prefix):  # dict entry is from zero-3
-                is_name_prefixed[name] = False
+                is_name_prefixed[name[len(module_prefix) :]] = False
 
         for unsharded_name, is_prefixed in is_name_prefixed.items():
             for pattern, action in self.config.state_rules.items():
@@ -154,12 +161,12 @@ class TensorParallel(nn.Module):
                         name: tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
                     }
                     tensor_shards = dict(sorted(tensor_shards.items()))  # basically sort by shard number
-                    state_dict[unsharded_name] = apply_inverse_action(  # add aggregated tensor entry
+                    state_dict[module_prefix + unsharded_name] = apply_inverse_action(  # add aggregated tensor entry
                         list(tensor_shards.values()), action, len(self.module_shards)
                     )
                     break
             else:
-                state_dict[unsharded_name] = next(
+                state_dict[module_prefix + unsharded_name] = next(
                     tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
                 )
             if is_prefixed:

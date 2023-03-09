@@ -60,3 +60,17 @@ def test_parallelism_zero_3(devices, model_name):
         assert data.shape == data_tp.shape
 
         torch.testing.assert_close(data, data_tp, msg=lambda msg: f"{name}:\n{msg}")
+
+
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased"])
+@pytest.mark.parametrize("shard_as_pretrained", [True, False])
+def test_save_keep_shards(devices, model_name, shard_as_pretrained):
+    model = BertModel.from_pretrained(model_name).to(devices[0])
+    if shard_as_pretrained:
+        model_tp = TensorParallelPreTrainedModel(model, devices)
+    else:
+        model_tp = TensorParallel(model, devices)
+
+    model_tp.set_preserve_shards_when_saving(True)
+    model_tp.load_state_dict(model_tp.state_dict())
