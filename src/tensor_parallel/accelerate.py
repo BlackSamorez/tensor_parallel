@@ -18,13 +18,22 @@ def infer_sharded_data_device_id(name: str):
     return int(name[shard_id_start:shard_id_end]) if shard_id_end > 0 else int(name[shard_id_start:])
 
 
-def save_preserving_shards(model, path: str):
+def infer_sharded_device_map(tp_model, devices=None):
+    device_map = {}
+    for name, _ in tp_model.named_parameters():
+        device_map[name] = devices[infer_sharded_data_device_id(name)]
+    for name, _ in tp_model.named_buffers():
+        device_map[name] = devices[infer_sharded_data_device_id(name)]
+    return device_map
+
+
+def save_separate_shards(model, path: str):
     model.set_preserve_shards_when_saving(True)
     state_dict = model.state_dict()
 
     index = {}
     reverse_index = {}
-    for name, _ in model.named_parameters():
+    for name in state_dict.keys():
         device_id = infer_sharded_data_device_id(name)
         index[name] = device_id
         if device_id in reverse_index:
@@ -40,4 +49,11 @@ def save_preserving_shards(model, path: str):
             index[name] = shard_file_name
 
     with open(os.path.join(path, "index.json"), "w") as file:
-        json.dump(index, file)
+        json.dump(index, file, indent=2)
+
+
+def load_separate_shards(model, index_path, devices):
+    from accelerate import load_checkpoint_in_model
+
+    load_checkpoint_in_model(model, index_path, device_map=infer_sharded_device_map(model, devices=devices))
+    model.wrapped_model.devices = devices
