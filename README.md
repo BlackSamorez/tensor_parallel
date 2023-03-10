@@ -54,6 +54,55 @@ Advanced parameters to `tensor_parallel`:
    - `sharded_param_names: List[str]` - parameter names that should be sharded this way, default = found automatically
 
   
+## Memory efficient dispatch
+
+To normally create and dispatch a `tensor_parallel` model one need whole model in memory. This can be troublesome6 but there is another way.
+
+It's possible to create a `tensor_parallel` on a machine with enought RAM, save it preserving distributed state and then reuse the save files to dispach model shards straight to GPUs on any other machine.
+
+The code to save distributed state should look like this:
+
+```python
+import transformers
+import tensor_parallel as tp
+
+RAM_LIMIT = "6GB" # we want to deploy the model on machines with as little as 6GB of RAM
+
+model = tp.TensorParallelPreTrainedModel(
+    transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-13b"), 
+    device_ids=["cpu", "cpu"] # split model but load into RAM
+)
+
+model.set_preserve_shards_when_saving(True)
+model.save_pretrained("opt-13b-tensor-parallel", max_shard_size=RAM_USAGE_LIMIT) # save model's distributed state
+```
+
+It normally produces many files containing model weights as well as model index. Those files then can be put on a machine for training/inference and loaded as follows:
+
+```python
+import transformers
+import tensor_parallel as tp
+
+from accelerate import init_empty_weights
+
+# Initialize a weightless model
+with init_empty_weights():
+    model = tp.TensorParallelPreTrainedModel(
+        transformers.AutoModelForCausalLM.from_config(
+            AutoConfig.from_pretrained("facebook/opt-13b")
+        ),
+        device_ids=["meta", "meta"] # and prepare it to be put on two devices
+    )
+
+# Incrementally load the distributed
+tp.load_and_dispatch_separate_shards(  state
+  model,
+  checkpoint="opt-13b-tensor-parallel/pytorch_model.bin.index.json",
+  device_ids=[0, 1] # and put it on GPUs 0 and 1
+)
+```
+Max RAM consumption of such loading is *max_shard_size* which in this example was set to 6GB.
+  
 ## FAQ
 
 - __Q:__ I don't have a multi-GPU server. Can I use tensor_parallel in Google Colab?
