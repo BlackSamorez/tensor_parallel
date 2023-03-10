@@ -98,6 +98,8 @@ class Sharded(nn.ModuleList):
         self._last_versions = tuple(flat_shard._version for flat_shard in self.flat_shards)
 
     def state_dict(self, destination=None, prefix="", keep_vars=False):
+        if self.module.preserve_shards_when_saving:
+            return super().state_dict(destination = destination, prefix=prefix, keep_vars=keep_vars)
         if destination is None:
             destination = OrderedDict()
             destination._metadata = OrderedDict()
