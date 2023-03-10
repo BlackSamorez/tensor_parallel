@@ -99,7 +99,7 @@ class Sharded(nn.ModuleList):
 
     def state_dict(self, destination=None, prefix="", keep_vars=False):
         if self.module.preserve_shards_when_saving:
-            return super().state_dict(destination = destination, prefix=prefix, keep_vars=keep_vars)
+            return super().state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
         if destination is None:
             destination = OrderedDict()
             destination._metadata = OrderedDict()
