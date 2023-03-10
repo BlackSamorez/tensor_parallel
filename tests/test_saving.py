@@ -86,6 +86,15 @@ def test_save_keep_shards(devices, model_name, shard_as_pretrained):
     model_tp.load_state_dict(model_tp.state_dict())
 
 
+def test_sharding_meta():
+    model_name = "bert-base-uncased"
+    with init_empty_weights():
+        model_tp = TensorParallel(BertModel.from_pretrained(model_name), ["meta", "meta"])
+
+    with pytest.raises(RuntimeError):
+        Sharded(model_tp)
+
+
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 @pytest.mark.parametrize("shraded_class", [TensorParallelPreTrainedModel, TensorParallel])
