@@ -83,7 +83,7 @@ It normally produces many files containing model weights as well as model index.
 import transformers
 import tensor_parallel as tp
 
-from accelerate import init_empty_weights
+from accelerate import init_empty_weights, load_checkpoint_in_model
 
 # Initialize a weightless model
 with init_empty_weights():
@@ -91,14 +91,16 @@ with init_empty_weights():
         transformers.AutoModelForCausalLM.from_config(
             AutoConfig.from_pretrained("facebook/opt-13b")
         ),
-        device_ids=["meta", "meta"] # and prepare it to be put on two devices
+        device_ids=[0, 1] # and prepare it to be put on GPUs 0 and 1
     )
 
-# Incrementally load the distributed
-tp.load_and_dispatch_separate_shards(  state
-  model,
-  checkpoint="opt-13b-tensor-parallel/pytorch_model.bin.index.json",
-  device_ids=[0, 1] # and put it on GPUs 0 and 1
+device_map = tp.infer_sharded_device_map(model_tp) # assign parameter to devices
+
+# Incrementally load the weights using your favorite loader
+load_checkpoint_in_model(
+    model,
+    checkpoint="opt-13b-tensor-parallel/pytorch_model.bin.index.json",
+    device_map=device_map,
 )
 ```
 Max RAM consumption of such loading is *max_shard_size* which in this example was set to 6GB.
