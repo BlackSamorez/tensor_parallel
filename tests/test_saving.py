@@ -1,6 +1,6 @@
 import pytest
 import torch
-from accelerate import init_empty_weights
+from accelerate import init_empty_weights, load_checkpoint_in_model
 from transformers import BertModel
 
 from tensor_parallel import (
@@ -8,7 +8,7 @@ from tensor_parallel import (
     Sharded,
     TensorParallel,
     TensorParallelPreTrainedModel,
-    load_and_dispatch_separate_shards,
+    infer_sharded_device_map,
     tensor_parallel,
 )
 
@@ -109,7 +109,11 @@ def test_save_shards_load_shards(devices, model_name, shraded_class):
     del model_tp
 
     with init_empty_weights():
-        model_tp = shraded_class(BertModel.from_pretrained(model_name), ("meta",) * len(devices))
+        model_tp = shraded_class(BertModel.from_pretrained(model_name), devices)
 
-    load_and_dispatch_separate_shards(model_tp, PATH_TO_SAVE + "test_save_shards_load_shards.bin", device_ids=devices)
+    load_checkpoint_in_model(
+        model_tp,
+        checkpoint=PATH_TO_SAVE + "test_save_shards_load_shards.bin",
+        device_map=infer_sharded_device_map(model_tp),
+    )
     assert not "meta" in [p.device.type for p in model_tp.parameters()]
