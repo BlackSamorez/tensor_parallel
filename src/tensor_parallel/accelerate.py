@@ -56,4 +56,4 @@ def load_separate_shards(model, index_path, devices):
     from accelerate import load_checkpoint_in_model
 
     load_checkpoint_in_model(model, index_path, device_map=infer_sharded_device_map(model, devices=devices))
-    model.wrapped_model.devices = devices
+    model.set_devices(devices)
