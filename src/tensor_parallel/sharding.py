@@ -38,6 +38,11 @@ class Sharded(nn.ModuleList):
         if len(module_shards) == 1:
             return
         if sharded_param_names is None:
+            if any([p.device.type == "meta" for p in module.parameters()]):
+                raise RuntimeError(
+                    "Trying to shard a model containing data on 'meta' device without providing 'sharded_param_names'. Consider sharding a model after loading the data for automatic sharding."
+                )
+
             sharded_param_names = find_replicated_parameters(*module_shards, only_trainable=True)
 
         self.sharded_param_names = sharded_param_names = tuple(sharded_param_names)
@@ -67,6 +72,9 @@ class Sharded(nn.ModuleList):
                     submodule._parameters.pop(param_name, None)
                     setattr(submodule, param_name, None)
         self._last_versions = None  # to be updated during first forward
+
+    def set_preserve_shards_when_saving(self, value: bool):
+        self.module.set_preserve_shards_when_saving(value=value)
 
     def forward(self, *args, **kwargs):
         if len(self.module.module_shards) > 1 and len(self.sharded_param_names) > 0:

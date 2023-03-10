@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Sequence, Union
+from typing import Collection, Optional, Sequence, Union
 
 import torch
 import torch.distributed
@@ -20,7 +20,7 @@ def tensor_parallel(
     config: Optional[Config] = None,
     distributed: Optional[bool] = None,
     sharded: Optional[bool] = None,
-    sharded_param_names: Optional[bool] = None,
+    sharded_param_names: Optional[Collection[str]] = None,
     **kwargs,
 ) -> nn.Module:
     """
@@ -74,7 +74,11 @@ def tensor_parallel(
 
 
 def _maybe_sharded(
-    module: TensorParallel, sharded: Optional[bool], num_trainable_parameters: int, **kwargs
+    module: TensorParallel,
+    sharded: Optional[bool],
+    num_trainable_parameters: int,
+    sharded_param_names: Optional[Collection[str]],
+    **kwargs,
 ) -> Union[Sharded, TensorParallel]:
     """Determines if sharding is necessary, returns either Sharded(module) or module itself, if unchanged"""
     determined_automatically = sharded is None
@@ -84,9 +88,15 @@ def _maybe_sharded(
         sharded = num_trainable_parameters_after_tp > num_trainable_parameters
         # use sharding if there are some *trainable* parameter that are replicated on more than one device
 
-        if sharded and determined_automatically:
-            num_extra_parameters = num_trainable_parameters_after_tp - num_trainable_parameters
-            replicated_parameters = num_extra_parameters // max(1, len(module.devices) - 1)
-            logger.warning(f"Using ZeRO-3 sharding for {replicated_parameters} non tensor-parallel parameters")
+    model_is_meta = any([p.device.type == "meta" for p in module.parameters()])
+    if sharded and model_is_meta and sharded_param_names is None:
+        logger.warning(
+            f"Not sharding the model that should be sharded because it has meta tensors which prevent sharding without 'sharded_param_names'. It's recomended to shard a model after loading it's weights."
+        )
+        sharded = False
+    elif sharded and determined_automatically:
+        num_extra_parameters = num_trainable_parameters_after_tp - num_trainable_parameters
+        replicated_parameters = num_extra_parameters // max(1, len(module.devices) - 1)
+        logger.warning(f"Using ZeRO-3 sharding for {replicated_parameters} non tensor-parallel parameters")
 
-    return Sharded(module, **kwargs) if sharded else module
+    return Sharded(module, sharded_param_names=sharded_param_names, **kwargs) if sharded else module
