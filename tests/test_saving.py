@@ -87,20 +87,17 @@ def test_save_keep_shards(devices, model_name, shard_as_pretrained):
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
-@pytest.mark.parametrize("shard_as_pretrained", [True, False])
-def test_save_shards_load_shards(devices, model_name, shard_as_pretrained):
+@pytest.mark.parametrize("shraded_class", [TensorParallelPreTrainedModel, TensorParallel])
+def test_save_shards_load_shards(devices, model_name, shraded_class):
     devices = [torch.device(device) for device in devices]
 
     model = BertModel.from_pretrained(model_name).to(devices[0])
-    if shard_as_pretrained:
-        model_tp = TensorParallelPreTrainedModel(model, devices)
-    else:
-        model_tp = TensorParallel(model, devices)
+    model_tp = shraded_class(model, devices)
 
     save_separate_shards(model_tp, "/tmp")
     del model_tp
 
     with init_empty_weights():
-        model_tp = TensorParallelPreTrainedModel(BertModel.from_pretrained(model_name), ("meta",) * len(devices))
+        model_tp = shraded_class(BertModel.from_pretrained(model_name), ("meta",) * len(devices))
 
     load_separate_shards(model_tp, "/tmp/index.json", devices=devices)
