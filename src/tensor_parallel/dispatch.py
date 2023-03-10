@@ -38,8 +38,8 @@ def load_and_dispatch_separate_shards(
     device_ids: Optional[Sequence[Union[torch.device, str]]] = None,
     **kwargs
 ):
-    """Loads a 'tensor_parallel' model with accelerate and dispathces it on 'device_ids' for tensor parallel training/inference.
-    Is usefult when there is no way to load whole model directly into RAM. Uses 'accelerate' do dispatch the model. **kwargs are passed to 'accelerate.load_checkpoint_in_model'.
+    """Loads a 'tensor_parallel' model saved with 'set_preserve_shards_when_saving(True)' and dispathces it on 'device_ids' for tensor parallel training/inference.
+    Is usefult when there is no way to load whole model directly into RAM. Uses 'accelerate' to load shardsa and dispatch the model. **kwargs are passed to 'accelerate.load_checkpoint_in_model'.
 
     Args:
         model (Union[TensorParallel, TensorParallelPreTrainedModel]): A model to load state dict into.
