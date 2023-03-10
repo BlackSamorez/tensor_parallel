@@ -352,9 +352,9 @@ def get_llama_config(model_config: LLaMAConfig, devices: Sequence[torch.device])
                 "split 1",
             ),
             # LLaMAFeedForward
-            r".*feed_forward\.w1\.weight$": "split 0",
-            r".*feed_forward\.w2\.weight$": "split 1",
-            r".*feed_forward\.w3\.weight$": "split 0",
+            r".*mlp\.gate_proj\.weight$": "split 0",
+            r".*mlp\.down_proj\.weight$": "split 1",
+            r".*mlp\.up_proj\.weight$": "split 0",
             # LLaMAModel
             r".*embed_tokens.weight$": "split 1",
             r".*lm_head\.weight$": "split 0",
@@ -364,7 +364,7 @@ def get_llama_config(model_config: LLaMAConfig, devices: Sequence[torch.device])
         },
         output_rules={
             r".*self_attn$": {0: "sum", 2: gather_kv_across_ranks},
-            r".*feed_forward$": {0: "sum"},
+            r".*mlp$": {0: "sum"},
             r".*embed_tokens$": {0: "gather -1"},
             r".*lm_head$": {0: "gather -1"},
         },
