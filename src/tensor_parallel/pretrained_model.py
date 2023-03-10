@@ -66,11 +66,12 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
             for encoder_decoder_shard in self.wrapped_model.module_shards:
                 self.encoder_shards.append(encoder_decoder_shard.get_encoder())
 
+    @property
+    def devices(self):
+        return self.wrapped_model.devices
+
     def set_preserve_shards_when_saving(self, value: bool):
         self.wrapped_model.set_preserve_shards_when_saving(value=value)
-
-    def set_devices(self, devices):
-        return self.wrapped_model.set_devices(devices=devices)
 
     def forward(self, *args, **kwargs):
         return self.wrapped_model(*args, **kwargs)

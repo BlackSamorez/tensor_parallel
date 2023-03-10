@@ -67,7 +67,10 @@ class TensorParallel(nn.Module):
         # ^-- creates a copy of comfig with collective op instances, such as AllReduce and AllGather
 
         for rank, device in enumerate(self.devices):
-            device = torch.device("cpu") if delay_init else device
+            if "meta" in [p.device.type for p in module.parameters()]:
+                device = torch.device("meta")
+            elif delay_init:
+                device = torch.device("cpu")
             self.module_shards.append(
                 config.make_shard(module, device, config_with_ops, rank=rank, world_size=world_size)
             )
@@ -93,9 +96,6 @@ class TensorParallel(nn.Module):
 
     def set_preserve_shards_when_saving(self, value: bool):
         self.preserve_shards_when_saving = value
-
-    def set_devices(self, devices):
-        self.devices = devices
 
     def prepare_args_kwargs_for_forward(self, *args, **kwargs):
         args_and_kwargs = (args, kwargs)
