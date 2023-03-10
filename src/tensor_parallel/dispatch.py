@@ -1,13 +1,12 @@
 import json
 import os
-
 from typing import Any, Dict, Optional, Sequence, Union
 
 import torch
 from accelerate import load_checkpoint_in_model
 
-from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
+from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids
 
 
 def infer_sharded_data_device_id(name: str):
