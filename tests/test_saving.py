@@ -1,8 +1,18 @@
 import pytest
 import torch
+from accelerate import init_empty_weights
 from transformers import BertModel
 
-from tensor_parallel import Config, Sharded, TensorParallel, TensorParallelPreTrainedModel, tensor_parallel
+from tensor_parallel import (
+    Config,
+    Sharded,
+    TensorParallel,
+    TensorParallelPreTrainedModel,
+    load_and_dispatch_separate_shards,
+    tensor_parallel,
+)
+
+PATH_TO_SAVE = "/tmp/"
 
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
@@ -74,3 +84,23 @@ def test_save_keep_shards(devices, model_name, shard_as_pretrained):
 
     model_tp.set_preserve_shards_when_saving(True)
     model_tp.load_state_dict(model_tp.state_dict())
+
+
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased"])
+@pytest.mark.parametrize("shraded_class", [TensorParallelPreTrainedModel, TensorParallel])
+def test_save_shards_load_shards(devices, model_name, shraded_class):
+    devices = [torch.device(device) for device in devices]
+
+    model = BertModel.from_pretrained(model_name).to(devices[0])
+    model_tp = shraded_class(model, devices)
+
+    model_tp.set_preserve_shards_when_saving(True)
+    torch.save(model_tp.state_dict(), PATH_TO_SAVE + "test_save_shards_load_shards.bin")
+    del model_tp
+
+    with init_empty_weights():
+        model_tp = shraded_class(BertModel.from_pretrained(model_name), ("meta",) * len(devices))
+
+    load_and_dispatch_separate_shards(model_tp, PATH_TO_SAVE + "test_save_shards_load_shards.bin", device_ids=devices)
+    assert not "meta" in [p.device.type for p in model_tp.parameters()]
