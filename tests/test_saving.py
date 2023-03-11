@@ -97,23 +97,29 @@ def test_sharding_meta():
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
-@pytest.mark.parametrize("shraded_class", [TensorParallelPreTrainedModel, TensorParallel])
-def test_save_shards_load_shards(devices, model_name, shraded_class):
+@pytest.mark.parametrize("pretrained", [True])
+def test_save_shards_load_shards(devices, model_name, pretrained):
     devices = [torch.device(device) for device in devices]
 
     model = BertModel.from_pretrained(model_name).to(devices[0])
+    shraded_class = TensorParallelPreTrainedModel if pretrained else TensorParallel
     model_tp = shraded_class(model, devices)
 
     model_tp.set_preserve_shards_when_saving(True)
-    torch.save(model_tp.state_dict(), PATH_TO_SAVE + "test_save_shards_load_shards.bin")
+    if pretrained:
+        half_the_model = f"{sum([p.numel() for p in model_tp.parameters()]) // 1_000_000 // 2}MB"
+        model_tp.save_pretrained(PATH_TO_SAVE, max_shard_size=half_the_model)
+    else:
+        torch.save(model_tp.state_dict(), PATH_TO_SAVE + "test_save_shards_load_shards.bin")
     del model_tp
 
     with init_empty_weights():
         model_tp = shraded_class(BertModel.from_pretrained(model_name), devices)
 
+    checkpoint = PATH_TO_SAVE + ("pytorch_model.bin.index.json" if pretrained else "test_save_shards_load_shards.bin")
     load_checkpoint_in_model(
         model_tp,
-        checkpoint=PATH_TO_SAVE + "test_save_shards_load_shards.bin",
+        checkpoint=checkpoint,
         device_map=infer_sharded_device_map(model_tp),
     )
     assert not "meta" in [p.device.type for p in model_tp.parameters()]
