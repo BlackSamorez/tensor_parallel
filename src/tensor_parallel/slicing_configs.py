@@ -348,6 +348,10 @@ def get_gpt_neox_config(model_config: GPTNeoXConfig, devices: Sequence[torch.dev
             r".*mlp\.dense_h_to_4h\.(weight|bias)$": "split 0",
             r".*mlp\.dense_4h_to_h\.weight$": "split 1",
             r".*mlp\.dense_4h_to_h\.bias$": "scale",
+            # GPTNeoXModel
+            r".*embed_in\.weight$": "split 1",
+            # GPTNeoXForCausalLM
+            r".*embed_out\.(weight|bias)$": "split 0",
         },
         input_rules={
             r".*attention$": {"layer_past": select_kv_for_rank},
@@ -355,6 +359,8 @@ def get_gpt_neox_config(model_config: GPTNeoXConfig, devices: Sequence[torch.dev
         output_rules={
             r".*attention$": {0: "sum", 1: gather_kv_across_ranks},
             r".*mlp$": {0: "sum"},
+            r".*embed_in$": {0: "gather -1"},
+            r".*embed_out$": {0: "gather -1"},
         },
         attr_rules={
             r".*attention$": {
