@@ -43,7 +43,9 @@ def test_multipurpose_configs(model_classes, model_name):
 
 @pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize("model_name", ["bigscience/bloom-560m", "gpt2", "trl-internal-testing/tiny-random-GPTNeoXForCausalLM"])
+@pytest.mark.parametrize(
+    "model_name", ["bigscience/bloom-560m", "gpt2", "trl-internal-testing/tiny-random-GPTNeoXForCausalLM"]
+)
 def test_forward_gpt2_like(use_config, devices, model_name):
     model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 
@@ -134,7 +136,9 @@ def test_forward_bert_like(use_config, devices, model_name):
 
 
 @pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {}, {"top_p": 0.5}])
-@pytest.mark.parametrize("model_name", ["t5-small", "bigscience/bloom-560m", "gpt2", "trl-internal-testing/tiny-random-GPTNeoXForCausalLM"])
+@pytest.mark.parametrize(
+    "model_name", ["t5-small", "bigscience/bloom-560m", "gpt2", "trl-internal-testing/tiny-random-GPTNeoXForCausalLM"]
+)
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 def test_generate(generate_kwargs, model_name, devices):
     def _generate_scores(model, input_ids, generate_kwargs):
