@@ -51,15 +51,15 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
     ):
         super().__init__(module.config)  # Temporary empty config. Gets replaced in from_pretrained
 
+        if hasattr(module, "_hf_hook"):
+            from accelerate.hooks import remove_hook_from_module
+
+            remove_hook_from_module(module, recurse=True)
+
         if config is None:
             config = find_predefined_tensor_parallel_config(module.config, device_ids)
 
         self.wrapped_model = TensorParallel(module, device_ids, output_device, output_device_index, config)
-
-        if hasattr(self.wrapped_model.module_shards[0], "_hf_hook"):
-            from accelerate.hooks import remove_hook_from_module
-
-            remove_hook_from_module(self.wrapped_model, recurse=True)
 
         self.encoder_shards = nn.ModuleList()
         if module.config.is_encoder_decoder:
