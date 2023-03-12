@@ -10,7 +10,7 @@ from itertools import chain
 from typing import Callable, Dict, Sequence
 
 import torch
-from transformers import BertConfig, BloomConfig, GPT2Config, PretrainedConfig, T5Config
+from transformers import BertConfig, BloomConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
 
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.slicer_wrapper import Config
@@ -323,9 +323,52 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
     )
 
 
+def get_gpt_neox_config(model_config: GPTNeoXConfig, devices: Sequence[torch.device]) -> Config:
+    world_size = len(devices)
+    num_heads = model_config.num_attention_heads
+    head_dim = model_config.hidden_size // model_config.num_attention_heads
+
+    gather_kv_across_ranks = CollectiveOperation(
+        world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
+    )  # this operation ensures that we get attention cache for all heads on each device
+
+    return Config(
+        state_rules={
+            # GPTNeoXAttention
+            r".*attention\.query_key_value\.(weight|bias)$": (
+                partial(split_heads, dim=0, head_dim=head_dim * 3, world_size=world_size),
+                "split 0",
+            ),
+            r".*attention\.dense\.weight$": (
+                partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
+                "split 1",
+            ),
+            r".*attention\.dense\.bias$": "scale",
+            # GPTNeoXMLP
+            r".*mlp\.dense_h_to_4h\.(weight|bias)$": "split 0",
+            r".*mlp\.dense_4h_to_h\.weight$": "split 1",
+            r".*mlp\.dense_4h_to_h\.bias$": "scale",
+        },
+        input_rules={
+            r".*attention$": {"layer_past": select_kv_for_rank},
+        },
+        output_rules={
+            r".*attention$": {0: "sum", 1: gather_kv_across_ranks},
+            r".*mlp$": {0: "sum"},
+        },
+        attr_rules={
+            r".*attention$": {
+                "num_attention_heads": partial(split_num_heads, world_size=world_size),
+                "hidden_size": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
+            }
+        },
+    )
+
+
 PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "bloom": get_bloom_config,
     "t5": get_t5_config,
     "bert": get_bert_config,
     "gpt2": get_gpt2_config,
+    "gpt_neox": get_gpt_neox_config,
 }
