@@ -150,7 +150,14 @@ def test_forward_bert_like(use_config, devices, model_name):
 
 @pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {}, {"top_p": 0.5}])
 @pytest.mark.parametrize(
-    "model_name", ["t5-small", "bigscience/bloom-560m", "gpt2", "trl-internal-testing/tiny-random-GPTNeoXForCausalLM", "decapoda-research/llama-7b-hf"]
+    "model_name",
+    [
+        "t5-small",
+        "bigscience/bloom-560m",
+        "gpt2",
+        "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
+        "decapoda-research/llama-7b-hf",
+    ],
 )
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 def test_generate(generate_kwargs, model_name, devices):
