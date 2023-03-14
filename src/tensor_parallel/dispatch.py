@@ -1,12 +1,36 @@
 import json
 import os
+from contextlib import contextmanager
 from typing import Any, Dict, Optional, Sequence, Union
 
 import torch
 from accelerate import load_checkpoint_in_model
 
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
+from tensor_parallel.sharding import Sharded
 from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids
+
+
+@contextmanager
+def save_tensor_parallel(model: Union[TensorParallel, TensorParallelPreTrainedModel, Sharded]):
+    """Enables state_dict reconstruction for tensor_parallel models.
+    With it '.state_dict()' produces a state dict that can be loaded into an underlying model.
+    Example:
+    ```python
+    model = <some model>
+    model_tp = tensor_parallel(model)
+    with save_tensor_parallel(model_tp):
+        model.load_state_dict(model_tp.state_dict()) # state dicts match
+    ```
+
+    Args:
+        model (Union[TensorParallel, TensorParallelPreTrainedModel, Sharded]): tensor_parallel model
+    """
+    model.set_preserve_shards_when_saving(False)
+    try:
+        yield
+    finally:
+        model.set_preserve_shards_when_saving(True)
 
 
 def infer_sharded_data_device_id(name: str):

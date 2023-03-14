@@ -92,7 +92,7 @@ class TensorParallel(nn.Module):
         self._sanity_check_params = nn.ParameterList(
             [nn.Parameter(torch.empty(0, device=device), requires_grad=False) for device in self.devices]
         )
-        self.preserve_shards_when_saving: bool = False
+        self.preserve_shards_when_saving: bool = True
 
     def set_preserve_shards_when_saving(self, value: bool):
         self.preserve_shards_when_saving = value

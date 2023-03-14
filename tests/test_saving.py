@@ -9,6 +9,7 @@ from tensor_parallel import (
     TensorParallel,
     TensorParallelPreTrainedModel,
     infer_sharded_device_map,
+    save_tensor_parallel,
     tensor_parallel,
 )
 
@@ -21,7 +22,8 @@ def test_no_parallelism_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_state_dict = model.state_dict()
     model_tp = Sharded(TensorParallel(model, devices, config=Config({}, {}, {}, {})))  # zero-3 sharding only
-    model_tp_state_dict = model_tp.state_dict()
+    with save_tensor_parallel(model_tp):
+        model_tp_state_dict = model_tp.state_dict()
 
     assert sorted(list(model_state_dict.keys())) == sorted(list(model_tp_state_dict.keys()))
 
@@ -40,7 +42,8 @@ def test_parallelism_no_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_state_dict = model.state_dict()
     model_tp = TensorParallelPreTrainedModel(model, devices)
-    model_tp_state_dict = model_tp.state_dict()
+    with save_tensor_parallel(model_tp):
+        model_tp_state_dict = model_tp.state_dict()
 
     assert sorted(list(model_state_dict.keys())) == sorted(list(model_tp_state_dict.keys()))
 
@@ -59,7 +62,8 @@ def test_parallelism_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_state_dict = model.state_dict()
     model_tp = tensor_parallel(model, devices, sharded=True)
-    model_tp_state_dict = model_tp.state_dict()
+    with save_tensor_parallel(model_tp):
+        model_tp_state_dict = model_tp.state_dict()
 
     assert sorted(list(model_state_dict.keys())) == sorted(list(model_tp_state_dict.keys()))
 
@@ -82,7 +86,6 @@ def test_save_keep_shards(devices, model_name, shard_as_pretrained):
     else:
         model_tp = TensorParallel(model, devices)
 
-    model_tp.set_preserve_shards_when_saving(True)
     model_tp.load_state_dict(model_tp.state_dict())
 
 
@@ -105,7 +108,6 @@ def test_save_shards_load_shards(devices, model_name, pretrained):
     shraded_class = TensorParallelPreTrainedModel if pretrained else TensorParallel
     model_tp = shraded_class(model, devices)
 
-    model_tp.set_preserve_shards_when_saving(True)
     if pretrained:
         half_the_model = f"{sum([p.numel() for p in model_tp.parameters()]) // 1_000_000 // 2}MB"
         model_tp.save_pretrained(PATH_TO_SAVE, max_shard_size=half_the_model)
