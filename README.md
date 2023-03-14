@@ -56,7 +56,7 @@ Advanced parameters to `tensor_parallel`:
   
 ## Memory efficient dispatch
 
-To normally create and dispatch a `tensor_parallel` model one need whole model in memory. This can be troublesome6 but there is another way.
+To normally create and dispatch a `tensor_parallel` model one need whole model in memory. This can be troublesome, but there is another way.
 
 It's possible to create a `tensor_parallel` on a machine with enought RAM, save it preserving distributed state and then reuse the save files to dispach model shards straight to GPUs on any other machine.
 
@@ -73,7 +73,6 @@ model = tp.TensorParallelPreTrainedModel(
     device_ids=["cpu", "cpu"] # split model but load into RAM
 )
 
-model.set_preserve_shards_when_saving(True)
 model.save_pretrained("opt-13b-tensor-parallel", max_shard_size=RAM_USAGE_LIMIT) # save model's distributed state
 ```
 
