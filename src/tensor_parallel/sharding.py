@@ -73,6 +73,10 @@ class Sharded(nn.ModuleList):
                     setattr(submodule, param_name, None)
         self._last_versions = None  # to be updated during first forward
 
+    @property
+    def preserve_shards_when_saving(self):
+        return self.module.preserve_shards_when_saving
+
     def set_preserve_shards_when_saving(self, value: bool):
         self.module.set_preserve_shards_when_saving(value=value)
 
