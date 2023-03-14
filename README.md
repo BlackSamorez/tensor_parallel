@@ -54,7 +54,30 @@ Advanced parameters to `tensor_parallel`:
    - `sharded_param_names: List[str]` - parameter names that should be sharded this way, default = found automatically
 
   
-## Memory efficient dispatch
+### Saving the model
+
+To save a model such that it could be used in a non `tensor_parallel` context you should use a `save_tensor_parallel` context wrapper.
+
+```python
+import torch
+import transformers
+import tensor_parallel as tp
+
+model = tp.tensor_parallel(
+    transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-13b"), 
+)
+
+# A whole lot of trainig...
+
+with tp.save_tensor_parallel(model):
+    torch.save(model.state_dict(), "/tmp/")
+    # or 
+    model.save_pretrained("/tmp/")
+```
+
+Such code saves a model as if it was never split. It works by gathering model parts during `state_dict` creation.
+  
+### Memory efficient dispatch
 
 To normally create and dispatch a `tensor_parallel` model one need whole model in memory. This can be troublesome, but there is another way.
 
@@ -70,10 +93,10 @@ RAM_LIMIT = "6GB" # we want to deploy the model on machines with as little as 6G
 
 model = tp.TensorParallelPreTrainedModel(
     transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-13b"), 
-    device_ids=["cpu", "cpu"] # split model but load into RAM
+    device_ids=["cpu", "cpu"] # split the model but it load into RAM
 )
 
-model.save_pretrained("opt-13b-tensor-parallel", max_shard_size=RAM_USAGE_LIMIT) # save model's distributed state
+model.save_pretrained("opt-13b-tensor-parallel", max_shard_size=RAM_USAGE_LIMIT) # save the model's distributed state
 ```
 
 It normally produces many files containing model weights as well as model index. Those files then can be put on a machine for training/inference and loaded as follows:
