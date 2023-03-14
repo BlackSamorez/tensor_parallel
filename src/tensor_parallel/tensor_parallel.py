@@ -67,7 +67,7 @@ class TensorParallel(nn.Module):
         # ^-- creates a copy of comfig with collective op instances, such as AllReduce and AllGather
 
         for rank, device in enumerate(self.devices):
-            if "meta" in [p.device.type for p in module.parameters()]:
+            if any(p.device.type == "meta" for p in module.parameters()):
                 device = torch.device("meta")
             elif delay_init:
                 device = torch.device("cpu")
