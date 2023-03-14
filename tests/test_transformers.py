@@ -58,9 +58,9 @@ def test_forward_gpt2_like(use_config, devices, model_name):
 
     model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 
-    inp1 = torch.randint(1, 1000, size=(2, 1), device=devices[0])
-    inp2 = torch.randint(1, 1000, size=(2, 2), device=devices[0])
-    inp3 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
+    inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
+    inp2 = torch.randint(1, 1000, size=(2, 1), device=devices[0])
+    inp3 = torch.randint(1, 1000, size=(2, 2), device=devices[0])
 
     out1_ref = model(inp1, use_cache=True, output_hidden_states=True)
     out2_ref = model(inp2, use_cache=True, past_key_values=out1_ref.past_key_values)
