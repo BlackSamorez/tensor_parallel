@@ -26,11 +26,11 @@ def save_tensor_parallel(model: Union[TensorParallel, TensorParallelPreTrainedMo
     Args:
         model (Union[TensorParallel, TensorParallelPreTrainedModel, Sharded]): tensor_parallel model
     """
-    model.set_preserve_shards_when_saving(False)
+    model.preserve_shards_when_saving = False
     try:
         yield
     finally:
-        model.set_preserve_shards_when_saving(True)
+        model.preserve_shards_when_saving = True
 
 
 def infer_sharded_data_device_id(name: str):

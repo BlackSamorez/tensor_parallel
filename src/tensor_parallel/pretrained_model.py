@@ -70,8 +70,13 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
     def devices(self):
         return self.wrapped_model.devices
 
-    def set_preserve_shards_when_saving(self, value: bool):
-        self.wrapped_model.set_preserve_shards_when_saving(value=value)
+    @property
+    def preserve_shards_when_saving(self):
+        return self.wrapped_model.preserve_shards_when_saving
+
+    @preserve_shards_when_saving.setter
+    def preserve_shards_when_saving(self, value):
+        self.wrapped_model.preserve_shards_when_saving = value
 
     def forward(self, *args, **kwargs):
         return self.wrapped_model(*args, **kwargs)

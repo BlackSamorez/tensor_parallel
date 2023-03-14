@@ -94,9 +94,6 @@ class TensorParallel(nn.Module):
         )
         self.preserve_shards_when_saving: bool = True
 
-    def set_preserve_shards_when_saving(self, value: bool):
-        self.preserve_shards_when_saving = value
-
     def prepare_args_kwargs_for_forward(self, *args, **kwargs):
         args_and_kwargs = (args, kwargs)
         flat_tensors = [obj for obj in nested_flatten(args_and_kwargs) if isinstance(obj, torch.Tensor)]

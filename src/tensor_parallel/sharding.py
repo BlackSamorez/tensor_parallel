@@ -77,8 +77,9 @@ class Sharded(nn.ModuleList):
     def preserve_shards_when_saving(self):
         return self.module.preserve_shards_when_saving
 
-    def set_preserve_shards_when_saving(self, value: bool):
-        self.module.set_preserve_shards_when_saving(value=value)
+    @preserve_shards_when_saving.setter
+    def preserve_shards_when_saving(self, value):
+        self.module.preserve_shards_when_saving = value
 
     def forward(self, *args, **kwargs):
         if len(self.module.module_shards) > 1 and len(self.sharded_param_names) > 0:
