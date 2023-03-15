@@ -66,8 +66,36 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
             for encoder_decoder_shard in self.wrapped_model.module_shards:
                 self.encoder_shards.append(encoder_decoder_shard.get_encoder())
 
+    @property
+    def devices(self):
+        return self.wrapped_model.devices
+
+    @property
+    def preserve_shards_when_saving(self):
+        return self.wrapped_model.preserve_shards_when_saving
+
+    @preserve_shards_when_saving.setter
+    def preserve_shards_when_saving(self, value):
+        self.wrapped_model.preserve_shards_when_saving = value
+
     def forward(self, *args, **kwargs):
         return self.wrapped_model(*args, **kwargs)
+
+    def state_dict(self, *args, **kwargs):
+        state_dict = super().state_dict(*args, **kwargs)
+        if self.wrapped_model.preserve_shards_when_saving:
+            return state_dict
+
+        prefix = kwargs["prefix"] if "prefix" in kwargs else ""
+        module_prefix = prefix + "wrapped_model."
+
+        module_parameter_names = [name for name in state_dict.keys() if name.startswith(module_prefix)]
+        for module_parameter_name in module_parameter_names:
+            original_parameter_name = prefix + module_parameter_name[len(module_prefix) :]
+            state_dict[original_parameter_name] = state_dict[module_parameter_name]
+            del state_dict[module_parameter_name]
+
+        return state_dict
 
     def _validate_model_class(self):
         return self.wrapped_model.module_shards[0]._validate_model_class()

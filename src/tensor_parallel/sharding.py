@@ -4,6 +4,7 @@ Utility functions for training original model parameters
 import functools
 import logging
 import os
+from collections import OrderedDict
 from operator import attrgetter
 from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 
@@ -37,6 +38,11 @@ class Sharded(nn.ModuleList):
         if len(module_shards) == 1:
             return
         if sharded_param_names is None:
+            if any([p.device.type == "meta" for p in module.parameters()]):
+                raise RuntimeError(
+                    "Trying to shard a model containing data on 'meta' device without providing 'sharded_param_names'. Consider sharding a model after loading the data for automatic sharding."
+                )
+
             sharded_param_names = find_replicated_parameters(*module_shards, only_trainable=True)
 
         self.sharded_param_names = sharded_param_names = tuple(sharded_param_names)
@@ -67,6 +73,14 @@ class Sharded(nn.ModuleList):
                     setattr(submodule, param_name, None)
         self._last_versions = None  # to be updated during first forward
 
+    @property
+    def preserve_shards_when_saving(self):
+        return self.module.preserve_shards_when_saving
+
+    @preserve_shards_when_saving.setter
+    def preserve_shards_when_saving(self, value):
+        self.module.preserve_shards_when_saving = value
+
     def forward(self, *args, **kwargs):
         if len(self.module.module_shards) > 1 and len(self.sharded_param_names) > 0:
             self._maybe_fill_sharded_params()
@@ -88,22 +102,28 @@ class Sharded(nn.ModuleList):
                     setattr(submodule, param_name, new_value)
         self._last_versions = tuple(flat_shard._version for flat_shard in self.flat_shards)
 
-    def _save_to_state_dict(self, destination, prefix, keep_vars):
+    def state_dict(self, destination=None, prefix="", keep_vars=False):
+        if self.module.preserve_shards_when_saving:
+            return super().state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
+        if destination is None:
+            destination = OrderedDict()
+            destination._metadata = OrderedDict()
+
+        local_metadata = dict(version=self._version)
+        if hasattr(destination, "_metadata"):
+            destination._metadata[prefix[:-1]] = local_metadata
+
         self._maybe_fill_sharded_params()
 
         for name in self.sharded_param_names:
             for shard in self.module.module_shards:
                 try:
-                    destination[name] = attrgetter(name)(shard)
+                    destination[prefix + name] = attrgetter(name)(shard)
                     break
                 except KeyError:
                     pass
 
-    def state_dict(self, *args, **kwargs):
-        state_dict = super().state_dict(*args, **kwargs)
-        for i in range(len(self.flat_shards)):
-            flat_shard_name = next(name for name, _ in state_dict.items() if name.endswith(f"flat_shards.{i}"))
-            del state_dict[flat_shard_name]
+        state_dict = self.module.state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
         return state_dict
 
     @property

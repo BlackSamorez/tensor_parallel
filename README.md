@@ -37,7 +37,7 @@ pip install https://github.com/BlackSamorez/tensor_parallel/archive/main.zip
 Simply wrap your PyTorch model with `tp.tensor_parallel` and use it normally.
 For best memory efficiency, call `tp.tensor_parallel` while the model is still on CPU.  
 
-Here's a few use cases:
+Here are a few use cases:
 - [`examples/training_flan-t5-xl.ipynb`](./examples/training_flan-t5-xl.ipynb) - fine-tune full FLAN-T5 model on text summarization
 - __TBA__ - inferencing a large language model with LLM.8bit + tensor_parallel
 - __TBA__ - defining custom parallelism strategy
@@ -53,6 +53,79 @@ Advanced parameters to `tensor_parallel`:
    - TL;DR use this when training to avoid duplicate parameters (enabled by default!) 
    - `sharded_param_names: List[str]` - parameter names that should be sharded this way, default = found automatically
 
+  
+### Saving the model
+
+To save a model such that it could be used in a non `tensor_parallel` context, you should use a `save_tensor_parallel` context wrapper.
+
+```python
+import torch
+import transformers
+import tensor_parallel as tp
+
+model = tp.tensor_parallel(
+    transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-13b"), 
+)
+
+# A whole lot of trainig...
+
+with tp.save_tensor_parallel(model):
+    torch.save(model.state_dict(), "/tmp/")
+    # or 
+    model.save_pretrained("/tmp/")
+```
+
+Such code saves a model as if it was never split. It works by gathering model parts during `state_dict` creation.
+  
+### Memory efficient dispatch
+
+Normally, to normally create and dispatch a `tensor_parallel` model, one needs the whole model in memory. This can be troublesome, but there is another way.
+
+It's possible to create a `tensor_parallel` on a machine with enough RAM, save it preserving distributed state, and then reuse the save files to dispatch model shards straight to GPUs on any other machine.
+
+The code to save distributed state should look like this:
+
+```python
+import transformers
+import tensor_parallel as tp
+
+RAM_LIMIT = "6GB" # we want to deploy the model on machines with as little as 6GB of RAM
+
+model = tp.TensorParallelPreTrainedModel(
+    transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-13b"), 
+    device_ids=["cpu", "cpu"] # split the model but it load into RAM
+)
+
+model.save_pretrained("opt-13b-tensor-parallel", max_shard_size=RAM_USAGE_LIMIT) # save the model's distributed state
+```
+
+It normally produces many files containing model weights as well as model index. Those files then can be put on a machine for training/inference and loaded as follows:
+
+```python
+import transformers
+import tensor_parallel as tp
+
+from accelerate import init_empty_weights, load_checkpoint_in_model
+
+# Initialize a weightless model
+with init_empty_weights():
+    model = tp.TensorParallelPreTrainedModel(
+        transformers.AutoModelForCausalLM.from_config(
+            AutoConfig.from_pretrained("facebook/opt-13b")
+        ),
+        device_ids=[0, 1] # and prepare it to be put on GPUs 0 and 1
+    )
+
+device_map = tp.infer_sharded_device_map(model_tp) # assign parameter to devices
+
+# Incrementally load the weights using your favorite loader
+load_checkpoint_in_model(
+    model,
+    checkpoint="opt-13b-tensor-parallel/pytorch_model.bin.index.json",
+    device_map=device_map,
+)
+```
+Max RAM consumption of such loading is *max_shard_size*, which in this example was set to 6 GB.
   
 ## FAQ
 
@@ -100,7 +173,7 @@ Use DeepSpeed+Megatron or alpa for million-dollar training runs.
 ## Troubleshooting
 
 If you experience NCCL errors, or random hanging, you may have some code errors that are not displayed properly. 
-To debug these errors, we recommend restarting with `export TENSOR_PARALLEL_USE_NATIVE=1` or a on single device. 
+To debug these errors, we recommend restarting with `export TENSOR_PARALLEL_USE_NATIVE=1` or on a single device. 
 
 If you found a bug or encountered a problem, please report it to [our issue tracker](https://github.com/BlackSamorez/tensor_parallel/issues).
 We will do our best to help, but it may take some time before we get to it.

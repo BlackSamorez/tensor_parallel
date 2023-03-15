@@ -366,9 +366,6 @@ class _TensorParallelWrapper(nn.Module):
     def __getattr__(self, attr):
         return getattr(self.tp_wrapped_module, attr)
 
-    def state_dict(self, *args, **kwargs):
-        return self.tp_wrapped_module.state_dict(*args, **kwargs)
-
 
 def _split_groups(tensor: torch.Tensor, dim: int, *, groups: int, rank: int, world_size: int) -> torch.Tensor:
     """split a tensor containing multiple groups by splitting each group individually"""
