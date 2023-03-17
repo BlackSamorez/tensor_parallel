@@ -16,7 +16,7 @@ from transformers import (
     CodeGenConfig,
     GPT2Config,
     GPTNeoXConfig,
-    LLaMAConfig,
+    LlamaConfig,
     PretrainedConfig,
     T5Config,
 )
@@ -363,7 +363,7 @@ def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.devi
     )
 
 
-def get_llama_config(model_config: LLaMAConfig, devices: Sequence[torch.device]) -> Config:
+def get_llama_config(model_config: LlamaConfig, devices: Sequence[torch.device]) -> Config:
     world_size = len(devices)
     num_heads = model_config.num_attention_heads
     head_dim = model_config.hidden_size // model_config.num_attention_heads
@@ -374,7 +374,7 @@ def get_llama_config(model_config: LLaMAConfig, devices: Sequence[torch.device])
 
     return Config(
         state_rules={
-            # LLaMAAttention
+            # LlamaAttention
             r".*self_attn\.q_proj\.weight$": (
                 partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
                 "split 0",
@@ -391,11 +391,11 @@ def get_llama_config(model_config: LLaMAConfig, devices: Sequence[torch.device])
                 partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
                 "split 1",
             ),
-            # LLaMAFeedForward
+            # LlamaFeedForward
             r".*mlp\.gate_proj\.weight$": "split 0",
             r".*mlp\.down_proj\.weight$": "split 1",
             r".*mlp\.up_proj\.weight$": "split 0",
-            # LLaMAModel
+            # LlamaModel
             r".*embed_tokens.weight$": "split 1",
             r".*lm_head\.weight$": "split 0",
         },
