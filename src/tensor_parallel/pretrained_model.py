@@ -108,7 +108,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
 
     def _reorder_cache(self, past, beam_idx):
         for i, shard in enumerate(self.wrapped_model.module_shards):
-            shard._reorder_cache(nested_map(lambda x: x[i] if isinstance(x, PerDeviceTensors) else x, past), beam_idx)
+            shard._reorder_cache(nested_map(lambda x: x[i] if isinstance(x, PerDeviceTensors) else x, past), beam_idx.to(self.wrapped_model.devices[i]))
 
     def get_encoder(self):
         assert len(self.wrapped_model.module_shards), "Can't get encoder since no module shards present"
