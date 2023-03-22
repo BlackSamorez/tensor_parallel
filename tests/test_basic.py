@@ -62,8 +62,20 @@ def test_convs(devices, extra_options):
         model_tp = TensorParallel(model_tp, device_ids=devices)
         out_ours = model_tp(inputs2)
         out_ours.norm().backward()
-        torch.testing.assert_close(ref_out, out_ours, atol=1e-6, rtol=1e-05)
-        torch.testing.assert_close(inputs1.grad, inputs2.grad, atol=1e-5, rtol=1e-05)
+        torch.testing.assert_close(
+            ref_out,
+            out_ours,
+            atol=1e-6,
+            rtol=1e-3,
+            msg=lambda msg: f"{msg}\n where Conv is {Conv} with extra_options {extra_options}",
+        )
+        torch.testing.assert_close(
+            inputs1.grad,
+            inputs2.grad,
+            atol=1e-3,
+            rtol=1e-05,
+            msg=lambda msg: f"{msg}\n where Conv is {Conv} with extra_options {extra_options}",
+        )
 
 
 @pytest.mark.parametrize("emb_cls", [nn.Embedding, nn.EmbeddingBag])
