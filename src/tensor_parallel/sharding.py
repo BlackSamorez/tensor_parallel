@@ -74,6 +74,10 @@ class Sharded(nn.ModuleList):
         self._last_versions = None  # to be updated during first forward
 
     @property
+    def devices(self):
+        return self.module.devices
+
+    @property
     def preserve_shards_when_saving(self):
         return self.module.preserve_shards_when_saving
 
