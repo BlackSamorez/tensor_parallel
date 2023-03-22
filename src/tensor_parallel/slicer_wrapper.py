@@ -146,7 +146,7 @@ class Config:
         }
         shard = deepcopy(module, memo=substitutes)
         # ^-- note: the memo=... above will replace all parameters and buffers with empty tensors
-        for x in chain(module.parameters(), module.buffers()):
+        for x in chain(shard.parameters(), shard.buffers()):
             if x.device.type != "meta":
                 x.to(device)
         del module, substitutes
