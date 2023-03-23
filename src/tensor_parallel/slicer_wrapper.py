@@ -138,17 +138,22 @@ class Config:
         source_tensors = dict(chain(module.named_parameters(), module.named_buffers()))
         substitutes = {
             id(x): nn.Parameter(
-                torch.empty(0, dtype=x.dtype, device=x.device, requires_grad=x.requires_grad), x.requires_grad
+                torch.empty(
+                    0,
+                    dtype=x.dtype,
+                    device=device if x.device.type != "meta" else x.device,
+                    requires_grad=x.requires_grad,
+                ),
+                x.requires_grad,
             )
             if isinstance(x, nn.Parameter)
-            else torch.empty(0, dtype=x.dtype, device=x.device, requires_grad=x.requires_grad)
+            else torch.empty(
+                0, dtype=x.dtype, device=device if x.device.type != "meta" else x.device, requires_grad=x.requires_grad
+            )
             for x in source_tensors.values()
         }
         shard = deepcopy(module, memo=substitutes)
         # ^-- note: the memo=... above will replace all parameters and buffers with empty tensors
-        for x in chain(module.parameters(), module.buffers()):
-            if x.device.type != "meta":
-                x.to(device)
         del module, substitutes
 
         # convert parameters and buffers
