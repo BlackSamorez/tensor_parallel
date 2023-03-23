@@ -55,7 +55,7 @@ def test_tp_bloom_block(devices, custom_config):
     )
     y_ref.backward(grad_proj)
 
-    block_tp = TensorParallel(block, devices, config=tp_config)
+    block_tp = TensorParallel(block, devices, tensor_parallel_config=tp_config)
     y_ours, cache_ours = block_tp(
         test_inputs2, use_cache=True, layer_past=layer_past, alibi=alibi, attention_mask=attention_mask
     )

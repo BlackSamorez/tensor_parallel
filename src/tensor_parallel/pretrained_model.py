@@ -47,7 +47,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
         device_ids: Optional[Sequence[torch.device]] = None,
         output_device: Optional[torch.device] = None,
         output_device_index: Optional[int] = None,
-        config: Optional[Config] = None,
+        tensor_parallel_config: Optional[Config] = None,
     ):
         super().__init__(module.config)  # Temporary empty config. Gets replaced in from_pretrained
 
@@ -56,10 +56,12 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
 
             remove_hook_from_module(module, recurse=True)
 
-        if config is None:
-            config = find_predefined_tensor_parallel_config(module.config, device_ids)
+        if tensor_parallel_config is None:
+            tensor_parallel_config = find_predefined_tensor_parallel_config(module.config, device_ids)
 
-        self.wrapped_model = TensorParallel(module, device_ids, output_device, output_device_index, config)
+        self.wrapped_model = TensorParallel(
+            module, device_ids, output_device, output_device_index, tensor_parallel_config
+        )
 
         self.encoder_shards = nn.ModuleList()
         if module.config.is_encoder_decoder:
@@ -69,6 +71,10 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
     @property
     def devices(self):
         return self.wrapped_model.devices
+
+    @property
+    def tensor_parallel_config(self):
+        return self.wrapped_model.tensor_parallel_config
 
     @property
     def preserve_shards_when_saving(self):

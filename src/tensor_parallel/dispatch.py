@@ -1,6 +1,8 @@
 import json
 import os
+import re
 from contextlib import contextmanager
+from itertools import chain
 from typing import Any, Dict, Optional, Sequence, Union
 
 import torch
@@ -8,7 +10,8 @@ from accelerate import load_checkpoint_in_model
 
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
 from tensor_parallel.sharding import Sharded
-from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids
+from tensor_parallel.slicer_wrapper import apply_action, find_matching_actions
+from tensor_parallel.tensor_parallel import Config, TensorParallel, check_device_ids
 
 
 @contextmanager
@@ -54,3 +57,57 @@ def infer_sharded_device_map(tp_model):
     for name, _ in tp_model.named_buffers():
         device_map[name] = tp_model.devices[infer_sharded_data_device_id(name)]
     return device_map
+
+
+def convert_state_dict(input_state_dict, config: Config, world_size: int, for_pretrained: bool = False) -> dict:
+    output_state_dict = {}
+    for i in range(world_size):
+        output_state_dict.update(convert_state_dict_single_shard(input_state_dict, config, world_size, i))
+        output_state_dict[f"_sanity_check_params.{i}"] = torch.empty(0, device="cpu")
+    if for_pretrained:
+        name_replacements = {name: "wrapped_model." + name for name in output_state_dict.keys()}
+        for old_name, new_name in name_replacements.items():
+            output_state_dict[new_name] = output_state_dict.pop(old_name)
+    return output_state_dict
+
+
+def convert_data(input_state_dict, output_state_dict, config: Config, world_size: int, rank: int):
+    for name, state in input_state_dict.items():
+        for pattern, action in config.state_rules.items():
+            if pattern.search(name) is not None:
+                output_state_dict[name] = apply_action(state, action, rank=rank, world_size=world_size)
+                break
+        else:
+            output_state_dict[name] = input_state_dict[name]  # copy source parameter as is
+
+
+def convert_names(state_dict, config: Config):
+    patterns = tuple(regex.pattern for regex in chain(config.input_rules.keys(), config.output_rules.keys()))
+    patterns = set(pattern[:-1] if pattern.endswith("$") else pattern for pattern in patterns)
+    patterns = [re.compile(pattern) for pattern in patterns]
+
+    name_replacements = {name: name for name in state_dict.keys()}
+    for pattern in patterns:
+        for initial_name, old_name in name_replacements.items():
+            match = pattern.search(old_name)
+            if match is not None:
+                end_pos = match.span()[1]
+                new_name = old_name[:end_pos] + ".tp_wrapped_module" + old_name[end_pos:]
+                name_replacements[initial_name] = new_name
+
+    for initial_name, final_name in name_replacements.items():
+        state_dict[final_name] = state_dict.pop(initial_name)
+
+
+def prefix_names_with_shard_id(state_dict, rank: int):
+    name_replacements = {name: f"module_shards.{rank}." + name for name in state_dict.keys()}
+    for old_name, new_name in name_replacements.items():
+        state_dict[new_name] = state_dict.pop(old_name)
+
+
+def convert_state_dict_single_shard(input_state_dict, config: Config, world_size: int, rank: int):
+    output_state_dict = {}
+    convert_data(input_state_dict, output_state_dict, config, world_size, rank)
+    convert_names(output_state_dict, config)
+    prefix_names_with_shard_id(output_state_dict, rank)
+    return output_state_dict

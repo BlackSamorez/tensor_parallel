@@ -78,6 +78,10 @@ class Sharded(nn.ModuleList):
         return self.module.devices
 
     @property
+    def tensor_parallel_config(self):
+        return self.module.tensor_parallel_config
+
+    @property
     def preserve_shards_when_saving(self):
         return self.module.preserve_shards_when_saving
 

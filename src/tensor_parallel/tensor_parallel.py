@@ -27,7 +27,7 @@ class TensorParallel(nn.Module):
         device_ids: Optional[Sequence[torch.device]] = None,
         output_device: Optional[torch.device] = None,
         output_device_index: Optional[int] = None,
-        config: Optional[Config] = None,
+        tensor_parallel_config: Optional[Config] = None,
         delay_init: bool = False,
     ):
         super().__init__()
@@ -50,7 +50,6 @@ class TensorParallel(nn.Module):
         self.all_cuda = all(device.type == "cuda" for device in self.devices)
         self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
         self.need_delayed_init = delay_init
-        self.config = config
         world_size = len(self.devices)
 
         if len(device_ids) <= 1:
@@ -59,18 +58,20 @@ class TensorParallel(nn.Module):
                 self.module_shards[0].to(device_ids[0])
             return
 
-        if config is None:
-            config = Config.get_default_config(module, self.devices)
+        if tensor_parallel_config is None:
+            tensor_parallel_config = Config.get_default_config(module, self.devices)
             logger.info("Using automatic config: sharding individual linear/conv/emb layers")
 
-        config_with_ops = config.create_collective_ops(self.devices)
+        self.tensor_parallel_config = tensor_parallel_config
+
+        config_with_ops = tensor_parallel_config.create_collective_ops(self.devices)
         # ^-- creates a copy of comfig with collective op instances, such as AllReduce and AllGather
 
         for rank, device in enumerate(self.devices):
             if delay_init:
                 device = torch.device("cpu")
             self.module_shards.append(
-                config.make_shard(module, device, config_with_ops, rank=rank, world_size=world_size)
+                tensor_parallel_config.make_shard(module, device, config_with_ops, rank=rank, world_size=world_size)
             )
 
         # self-diagnostics: check if the model was sharded properly
@@ -153,7 +154,7 @@ class TensorParallel(nn.Module):
                 is_name_prefixed[name[len(module_prefix) :]] = False
 
         for unsharded_name, is_prefixed in is_name_prefixed.items():
-            for pattern, action in self.config.state_rules.items():
+            for pattern, action in self.tensor_parallel_config.state_rules.items():
                 if pattern.search(unsharded_name) is not None:
                     tensor_shards = {
                         name: tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
