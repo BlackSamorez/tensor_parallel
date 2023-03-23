@@ -131,13 +131,17 @@ def test_save_shards_load_shards(devices, model_name, pretrained):
     assert not "meta" in [p.device.type for p in model_tp.parameters()]
 
 
+@pytest.mark.parametrize("use_pretrained", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
-def test_convert_state_dict(devices, model_name):
+def test_convert_state_dict(use_pretrained, devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0])
     torch.save(model.state_dict(), PATH_TO_SAVE + "test_convert_state_dict.bin")
 
-    model_tp = TensorParallelPreTrainedModel(model, devices)
+    if use_pretrained:
+        model_tp = TensorParallelPreTrainedModel(model, devices)
+    else:
+        model_tp = TensorParallel(model, devices)
     del model
 
     model_tp_state_dict = model_tp.state_dict()
@@ -145,7 +149,7 @@ def test_convert_state_dict(devices, model_name):
         torch.load(PATH_TO_SAVE + "test_convert_state_dict.bin"),
         model_tp.tensor_parallel_config,
         world_size=len(devices),
-        for_pretrained=True,
+        for_pretrained=use_pretrained,
     )
 
     assert sorted(list(model_tp_state_dict.keys())) == sorted(list(converted_state_dict.keys()))
