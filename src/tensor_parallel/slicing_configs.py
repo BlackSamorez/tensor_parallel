@@ -369,23 +369,6 @@ def get_gpt_neox_config(model_config: GPTNeoXConfig, devices: Sequence[torch.dev
     )
 
 
-def split_codegen_qkv(tensor: torch.Tensor, rank: int, world_size: int, head_dim: int):
-    tensor = tensor.permute(1, 0)
-    heads_per_part = tensor.shape[1] // head_dim // 4 // 3
-    qkvqkvqkvqkv = (
-        tensor.reshape(tensor.shape[0], 4, 3, heads_per_part, head_dim)  # [in, 4 * 3 * head_dim]
-        .permute(0, 1, 3, 2, 4)
-        .reshape(tensor.shape[0], tensor.shape[1])
-    )
-    megapart = split_heads(qkvqkvqkvqkv, dim=1, head_dim=12 * head_dim, rank=rank, world_size=world_size)
-    result = (
-        megapart.reshape(megapart.shape[0], 4, -1, 3, head_dim)
-        .permute(0, 1, 3, 2, 4)
-        .reshape(megapart.shape[0], megapart.shape[1])
-    )
-    return result.permute(1, 0)
-
-
 def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.device]) -> Config:
     world_size = len(devices)
     num_heads = model_config.num_attention_heads
@@ -395,7 +378,22 @@ def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.devi
         world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
     )  # this operation ensures that we get attention cache for all heads on each device
 
-    def codegen_split_num_heads(num_heads: int, *, rank: int, world_size: int):
+    def split_codegen_qkv(tensor: torch.Tensor, rank: int, world_size: int, head_dim: int):
+        tensor = tensor.permute(1, 0)
+        tensor = (
+            tensor.reshape(tensor.shape[0], 4, 3, -1, head_dim)
+            .permute(0, 1, 3, 2, 4)
+            .reshape(tensor.shape[0], tensor.shape[1])
+        )
+        tensor = split_heads(tensor, dim=1, head_dim=12 * head_dim, rank=rank, world_size=world_size)
+        result = (
+            tensor.reshape(tensor.shape[0], 4, -1, 3, head_dim)
+            .permute(0, 1, 3, 2, 4)
+            .reshape(tensor.shape[0], tensor.shape[1])
+        )
+        return result.permute(1, 0)
+
+    def split_codegen_num_heads(num_heads: int, *, rank: int, world_size: int):
         return 4 * split_num_heads(num_heads // 4, rank=rank, world_size=world_size)
 
     return Config(
@@ -430,7 +428,7 @@ def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.devi
         attr_rules={
             r".*attn$": {
                 "embed_dim": partial(split_inner_dim, num_heads=num_heads // 4, world_size=world_size),
-                "num_attention_heads": partial(codegen_split_num_heads, world_size=world_size),
+                "num_attention_heads": partial(split_codegen_num_heads, world_size=world_size),
             }
         },
     )
