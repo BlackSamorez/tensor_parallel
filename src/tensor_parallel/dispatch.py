@@ -83,7 +83,7 @@ def convert_data(input_state_dict, output_state_dict, config: Config, world_size
 
 def convert_names(state_dict, config: Config):
     patterns = tuple(regex.pattern for regex in chain(config.input_rules.keys(), config.output_rules.keys()))
-    patterns = set(pattern[:-1] if pattern.endswith("$") else pattern for pattern in patterns)
+    patterns = set(pattern[:-1] + "\." if pattern.endswith("$") else pattern for pattern in patterns)
     patterns = [re.compile(pattern) for pattern in patterns]
 
     name_replacements = {name: name for name in state_dict.keys()}
@@ -92,7 +92,7 @@ def convert_names(state_dict, config: Config):
             match = pattern.search(old_name)
             if match is not None:
                 end_pos = match.span()[1]
-                new_name = old_name[:end_pos] + ".tp_wrapped_module" + old_name[end_pos:]
+                new_name = old_name[:end_pos] + "tp_wrapped_module." + old_name[end_pos:]
                 name_replacements[initial_name] = new_name
 
     for initial_name, final_name in name_replacements.items():
