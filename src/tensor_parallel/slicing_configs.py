@@ -10,7 +10,7 @@ from itertools import chain
 from typing import Callable, Dict, Sequence
 
 import torch
-from transformers import BertConfig, BloomConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config, CodeGenConfig
+from transformers import BertConfig, BloomConfig, CodeGenConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
 
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.slicer_wrapper import Config
@@ -409,23 +409,23 @@ def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.devi
                 partial(split_heads, dim=1, head_dim=4 * head_dim, world_size=world_size),
                 "split 1",
             ),
-            # # GPTNeoXMLP
-            # r".*mlp\.dense_h_to_4h\.(weight|bias)$": "split 0",
-            # r".*mlp\.dense_4h_to_h\.weight$": "split 1",
-            # r".*mlp\.dense_4h_to_h\.bias$": "scale",
-            # # GPTNeoXModel
-            # r".*embed_in\.weight$": "split 1",
-            # # GPTNeoXForCausalLM
-            # r".*embed_out\.(weight|bias)$": "split 0",
+            # CodeGenMLP
+            r".*mlp\.fc_in\.(weight|bias)$": "split 0",
+            r".*mlp\.fc_out\.weight$": "split 1",
+            r".*mlp\.fc_out\.bias$": "scale",
+            # CodeGenModel
+            r".*wte\.weight$": "split 1",
+            # CodeGenForCausalLM
+            r".*lm_head\.(weight|bias)$": "split 0",
         },
         input_rules={
             r".*attn$": {"layer_past": select_kv_for_rank},
         },
         output_rules={
             r".*attn$": {0: "sum", 1: gather_kv_across_ranks},
-            # r".*mlp$": {0: "sum"},
-            # r".*embed_in$": {0: "gather -1"},
-            # r".*embed_out$": {0: "gather -1"},
+            r".*mlp$": {0: "sum"},
+            r".*wte$": {0: "gather -1"},
+            r".*lm_head$": {0: "gather -1"},
         },
         attr_rules={
             r".*attn$": {
