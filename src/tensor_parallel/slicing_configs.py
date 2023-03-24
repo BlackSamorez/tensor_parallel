@@ -10,7 +10,7 @@ from itertools import chain
 from typing import Callable, Dict, Sequence
 
 import torch
-from transformers import BertConfig, BloomConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
+from transformers import BertConfig, BloomConfig, CodeGenConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
 
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.slicer_wrapper import Config
@@ -89,9 +89,7 @@ def split_heads(tensor: torch.Tensor, *, dim: int, head_dim: int, rank: int, wor
     shape.insert(dim + 1, head_dim)
     tensor_part = tensor.reshape(shape).tensor_split(world_size, dim=dim)[rank].flatten(dim, dim + 1)
     if tensor_part.shape[dim] == 0:
-        shape = list(tensor_part.shape)
-        shape[dim] = 1
-        return torch.zeros(shape)
+        return torch.zeros(shape[:dim] + shape[dim + 1 :])
     return tensor_part
 
 
@@ -371,10 +369,76 @@ def get_gpt_neox_config(model_config: GPTNeoXConfig, devices: Sequence[torch.dev
     )
 
 
+def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.device]) -> Config:
+    world_size = len(devices)
+    num_heads = model_config.num_attention_heads
+    head_dim = model_config.hidden_size // model_config.num_attention_heads
+
+    gather_kv_across_ranks = CollectiveOperation(
+        world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
+    )  # this operation ensures that we get attention cache for all heads on each device
+
+    def split_codegen_qkv(tensor: torch.Tensor, rank: int, world_size: int, head_dim: int):
+        tensor = tensor.permute(1, 0)
+        tensor = (
+            tensor.reshape(tensor.shape[0], 4, 3, -1, head_dim)
+            .permute(0, 1, 3, 2, 4)
+            .reshape(tensor.shape[0], tensor.shape[1])
+        )
+        tensor = split_heads(tensor, dim=1, head_dim=12 * head_dim, rank=rank, world_size=world_size)
+        result = (
+            tensor.reshape(tensor.shape[0], 4, -1, 3, head_dim)
+            .permute(0, 1, 3, 2, 4)
+            .reshape(tensor.shape[0], tensor.shape[1])
+        )
+        return result.permute(1, 0)
+
+    def split_codegen_num_heads(num_heads: int, *, rank: int, world_size: int):
+        return 4 * split_num_heads(num_heads // 4, rank=rank, world_size=world_size)
+
+    return Config(
+        state_rules={
+            # CodeGenAttention
+            r".*attn\.qkv_proj\.weight$": (
+                partial(split_codegen_qkv, head_dim=head_dim, world_size=world_size),
+                "split 0",
+            ),
+            r".*attn\.out_proj\.weight$": (
+                partial(split_heads, dim=1, head_dim=4 * head_dim, world_size=world_size),
+                "split 1",
+            ),
+            # CodeGenMLP
+            r".*mlp\.fc_in\.(weight|bias)$": "split 0",
+            r".*mlp\.fc_out\.weight$": "split 1",
+            r".*mlp\.fc_out\.bias$": "scale",
+            # CodeGenModel
+            r".*wte\.weight$": "split 1",
+            # CodeGenForCausalLM
+            r".*lm_head\.(weight|bias)$": "split 0",
+        },
+        input_rules={
+            r".*attn$": {"layer_past": select_kv_for_rank},
+        },
+        output_rules={
+            r".*attn$": {0: "sum", 1: gather_kv_across_ranks},
+            r".*mlp$": {0: "sum"},
+            r".*wte$": {0: "gather -1"},
+            r".*lm_head$": {0: "gather -1"},
+        },
+        attr_rules={
+            r".*attn$": {
+                "embed_dim": partial(split_inner_dim, num_heads=num_heads // 4, world_size=world_size),
+                "num_attention_heads": partial(split_codegen_num_heads, world_size=world_size),
+            }
+        },
+    )
+
+
 PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "bloom": get_bloom_config,
     "t5": get_t5_config,
     "bert": get_bert_config,
     "gpt2": get_gpt2_config,
     "gpt_neox": get_gpt_neox_config,
+    "codegen": get_codegen_config,
 }
