@@ -44,7 +44,13 @@ def test_multipurpose_configs(model_classes, model_name):
 @pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize(
-    "model_name", ["bigscience/bloom-560m", "gpt2", "trl-internal-testing/tiny-random-GPTNeoXForCausalLM"]
+    "model_name",
+    [
+        "bigscience/bloom-560m",
+        "gpt2",
+        "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
+        "Salesforce/codegen-350M-mono",
+    ],
 )
 def test_forward_gpt2_like(use_config, devices, model_name):
     model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
