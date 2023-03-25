@@ -174,6 +174,10 @@ class Config:
                 if child in unique_wrappers:
                     setattr(parent, child_name, unique_wrappers[child])
 
+        # automatically fixes certain submodule attributes such that
+        # it's not necessary to specify in a config
+        fix_general_attributes(shard)
+
         return unique_wrappers.get(shard, shard)  # wrap the root module if needed
 
     def make_distributed_shard(self, module: nn.Module, device: torch.device):
@@ -318,6 +322,19 @@ def process_state_(
 
     if unused_patterns:
         logger.warning(f"The following patterns in state_rules were unused: {[str(p) for p in unused_patterns]}")
+
+
+@torch.no_grad()
+def fix_general_attributes(sharded_module: nn.Module):
+    """Fix well-known submodule attributes of a freshly initialized sharded_module.
+       For examle fixes nn.Linear in_features and out_features based on a split weight shape.
+    Args:
+        sharded_module (nn.Module): sharded_module to fix
+    """
+    for module in sharded_module.modules():
+        if isinstance(module, nn.Linear):
+            module.in_features = module.weight.shape[1]
+            module.out_features = module.weight.shape[0]
 
 
 def process_attrs_(module: nn.Module, actions: Dict[Arg, str], rank: int, world_size: int):
