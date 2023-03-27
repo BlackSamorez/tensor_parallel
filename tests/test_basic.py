@@ -10,6 +10,25 @@ from tensor_parallel import Sharded, TensorParallel
 
 @pytest.mark.parametrize("emb_cls", [nn.Embedding, nn.EmbeddingBag])
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu", "cpu"), ("cpu", "cpu", "cpu")])
+def test_basic_attributes(emb_cls, devices):
+    model_tp = TensorParallel(
+        nn.Sequential(
+            emb_cls(num_embeddings=1337, embedding_dim=64),
+            nn.LayerNorm(64),
+            nn.Linear(64, 128),
+            nn.ReLU(),
+            nn.Linear(128, 10),
+        ),
+        device_ids=devices,
+    )
+
+    for name, module in model_tp.named_modules():
+        if isinstance(module, nn.Linear):
+            assert module.weight.shape == (module.out_features, module.in_features), f"For module {name}"
+
+
+@pytest.mark.parametrize("emb_cls", [nn.Embedding, nn.EmbeddingBag])
+@pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu", "cpu"), ("cpu", "cpu", "cpu")])
 def test_embeds_and_linear(emb_cls, devices):
     model = nn.Sequential(
         emb_cls(num_embeddings=1337, embedding_dim=64),

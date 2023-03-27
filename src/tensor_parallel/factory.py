@@ -17,7 +17,7 @@ logger = logging.getLogger(__file__)
 def tensor_parallel(
     module: nn.Module,
     device_ids: Optional[Sequence[Union[torch.device, str]]] = None,
-    config: Optional[Config] = None,
+    tensor_parallel_config: Optional[Config] = None,
     distributed: Optional[bool] = None,
     sharded: Optional[bool] = None,
     sharded_param_names: Optional[Collection[str]] = None,
@@ -36,7 +36,7 @@ def tensor_parallel(
 
     :param module: original PyTorch module. We recommend storing input module on CPU to minimize GPU memory
     :param device_ids: model will be split among this list of devices (e.g. GPUs), default = all available CUDA devices
-    :param config: custom tensor_parallel.Config to describe how the model is parallelized. defaults to auto config
+    :param tensor_parallel_config: custom tensor_parallel.Config to describe how the model is parallelized. defaults to auto config
     :param distributed: if True, use torch.distributed instead of threading. Assumes that we is running in torchrun
        defaults to True if torch.distributed.is_initialized, else False
     :param sharded: if True, any non-tensor-parallel parameters (e.g. layernorm weight) will still be sharded,
@@ -55,19 +55,25 @@ def tensor_parallel(
             device_ids = [torch.device("cuda" if torch.cuda.is_available() else "cpu")]
         assert len(device_ids) == 1, "if distributed=True, please specify a single (current) device"
         assert not sharded, "distributed + sharded mode is not implemented, please keep one"
-        if config is None:
-            config = Config.get_default_config(module, device_ids=range(torch.distributed.get_world_size()))
+        if tensor_parallel_config is None:
+            tensor_parallel_config = Config.get_default_config(
+                module, device_ids=range(torch.distributed.get_world_size())
+            )
             logger.info("Using automatic config: sharding individual linear/conv/emb layers")
 
-        return config.make_distributed_shard(module, device=torch.device(device_ids[0]), **kwargs)
+        return tensor_parallel_config.make_distributed_shard(module, device=torch.device(device_ids[0]), **kwargs)
     else:
         if isinstance(module, PreTrainedModel):
-            module = TensorParallelPreTrainedModel(module, device_ids=device_ids, config=config, **kwargs)
+            module = TensorParallelPreTrainedModel(
+                module, device_ids=device_ids, tensor_parallel_config=tensor_parallel_config, **kwargs
+            )
             module.wrapped_model = _maybe_sharded(
                 module.wrapped_model, sharded, num_trainable_parameters, sharded_param_names=sharded_param_names
             )
         else:
-            module = TensorParallel(module, device_ids=device_ids, config=config, **kwargs)
+            module = TensorParallel(
+                module, device_ids=device_ids, tensor_parallel_config=tensor_parallel_config, **kwargs
+            )
             module = _maybe_sharded(module, sharded, num_trainable_parameters, sharded_param_names=sharded_param_names)
 
         return module

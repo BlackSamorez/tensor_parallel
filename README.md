@@ -85,25 +85,7 @@ Such code saves a model as if it was never split. It works by gathering model pa
 
 Normally, to normally create and dispatch a `tensor_parallel` model, one needs the whole model in memory. This can be troublesome, but there is another way.
 
-It's possible to create a `tensor_parallel` on a machine with enough RAM, save it preserving distributed state, and then reuse the save files to dispatch model shards straight to GPUs on any other machine.
-
-The code to save distributed state should look like this:
-
-```python
-import transformers
-import tensor_parallel as tp
-
-RAM_LIMIT = "6GB" # we want to deploy the model on machines with as little as 6GB of RAM
-
-model = tp.TensorParallelPreTrainedModel(
-    transformers.AutoModelForCausalLM.from_pretrained("facebook/opt-13b"), 
-    device_ids=["cpu", "cpu"] # split the model but it load into RAM
-)
-
-model.save_pretrained("opt-13b-tensor-parallel", max_shard_size=RAM_USAGE_LIMIT) # save the model's distributed state
-```
-
-It normally produces many files containing model weights as well as model index. Those files then can be put on a machine for training/inference and loaded as follows:
+It's possible to convert a `state_dict` of a basic model into the corresponding `tensor_parallel` `state_dict` using a helper function `convert_state_dict`. The state dict can then be dispatched and loaded into the model:
 
 ```python
 import transformers
@@ -111,25 +93,28 @@ import tensor_parallel as tp
 
 from accelerate import init_empty_weights, load_checkpoint_in_model
 
-# Initialize a weightless model
+# Initialize a weightless tensor_parallel model from MyModel
 with init_empty_weights():
-    model = tp.TensorParallelPreTrainedModel(
-        transformers.AutoModelForCausalLM.from_config(
-            AutoConfig.from_pretrained("facebook/opt-13b")
-        ),
+    model = tp.TensorParallel(
+        MyModel(),
         device_ids=[0, 1] # and prepare it to be put on GPUs 0 and 1
     )
 
-device_map = tp.infer_sharded_device_map(model_tp) # assign parameter to devices
+# Load partial state_dict for MyModel
+state_dict = torch.load("my_model_part_1_of_5.bin")
 
-# Incrementally load the weights using your favorite loader
-load_checkpoint_in_model(
-    model,
-    checkpoint="opt-13b-tensor-parallel/pytorch_model.bin.index.json",
-    device_map=device_map,
+# Convert it into a tensor_parallel state_dict
+tensor_parallel_state_dict = tp.tensor_parallel(
+    state_dict,
+    tensor_parallel_config=model.tensor_parallel_config,
+    world_size=len(model.devices),
 )
+
+# Dispatch the partial state_dict
+model.load_state_dict(tensor_parallel_state_dict)
 ```
-Max RAM consumption of such loading is *max_shard_size*, which in this example was set to 6 GB.
+
+With this no more than one part of the model needs to be loaded into memory at once. 
   
 ## FAQ
 

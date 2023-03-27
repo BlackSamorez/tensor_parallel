@@ -66,7 +66,7 @@ def test_forward_gpt2_like(use_config, devices, model_name):
     tp_config = None
     if use_config:
         tp_config = find_predefined_tensor_parallel_config(model.config, devices)
-    model_tp = TensorParallel(model, devices, config=tp_config)
+    model_tp = TensorParallel(model, devices, tensor_parallel_config=tp_config)
     del model
 
     out1 = model_tp(inp1, use_cache=True, output_hidden_states=True)
@@ -97,7 +97,7 @@ def test_forward_t5_like(use_config, devices, model_name):
     tp_config = None
     if use_config:
         tp_config = find_predefined_tensor_parallel_config(model.config, devices)
-    model_tp = TensorParallel(model, devices, config=tp_config)
+    model_tp = TensorParallel(model, devices, tensor_parallel_config=tp_config)
     del model
 
     out1 = model_tp(enc, decoder_input_ids=dec1, use_cache=True, output_hidden_states=True)
@@ -129,7 +129,7 @@ def test_forward_bert_like(use_config, devices, model_name):
     tp_config = None
     if use_config:
         tp_config = find_predefined_tensor_parallel_config(model.config, devices)
-    model_tp = TensorParallel(model, devices, config=tp_config)
+    model_tp = TensorParallel(model, devices, tensor_parallel_config=tp_config)
     del model
 
     out1 = model_tp(inp1, output_hidden_states=True)

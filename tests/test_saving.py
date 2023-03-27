@@ -8,10 +8,12 @@ from tensor_parallel import (
     Sharded,
     TensorParallel,
     TensorParallelPreTrainedModel,
+    convert_state_dict,
     infer_sharded_device_map,
     save_tensor_parallel,
     tensor_parallel,
 )
+from tensor_parallel.pretrained_model import find_predefined_tensor_parallel_config
 
 PATH_TO_SAVE = "/tmp/"
 
@@ -21,7 +23,9 @@ PATH_TO_SAVE = "/tmp/"
 def test_no_parallelism_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_state_dict = model.state_dict()
-    model_tp = Sharded(TensorParallel(model, devices, config=Config({}, {}, {}, {})))  # zero-3 sharding only
+    model_tp = Sharded(
+        TensorParallel(model, devices, tensor_parallel_config=Config({}, {}, {}, {}))
+    )  # zero-3 sharding only
     with save_tensor_parallel(model_tp):
         model_tp_state_dict = model_tp.state_dict()
 
@@ -125,3 +129,35 @@ def test_save_shards_load_shards(devices, model_name, pretrained):
         device_map=infer_sharded_device_map(model_tp),
     )
     assert not "meta" in [p.device.type for p in model_tp.parameters()]
+
+
+@pytest.mark.parametrize("use_pretrained", [False, True])
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased"])
+def test_convert_state_dict(use_pretrained, devices, model_name):
+    model = AutoModel.from_pretrained(model_name).to(devices[0])
+    torch.save(model.state_dict(), PATH_TO_SAVE + "test_convert_state_dict.bin")
+
+    if use_pretrained:
+        model_tp = TensorParallelPreTrainedModel(model, devices)
+    else:
+        model_tp = TensorParallel(model, devices)
+    del model
+
+    model_tp_state_dict = model_tp.state_dict()
+    converted_state_dict = convert_state_dict(
+        torch.load(PATH_TO_SAVE + "test_convert_state_dict.bin"),
+        model_tp.tensor_parallel_config,
+        world_size=len(devices),
+        for_pretrained=use_pretrained,
+    )
+
+    assert sorted(list(model_tp_state_dict.keys())) == sorted(list(converted_state_dict.keys()))
+
+    for name in model_tp_state_dict.keys():
+        data_tp = model_tp_state_dict[name]
+        data_converted = converted_state_dict[name]
+
+        assert data_tp.shape == data_converted.shape
+
+        torch.testing.assert_close(data_tp, data_converted)
