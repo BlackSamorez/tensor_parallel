@@ -43,14 +43,14 @@ For best memory efficiency, call `tp.tensor_parallel` while the model is still o
 
 Here are a few use cases:
 - [`examples/training_flan-t5-xl.ipynb`](./examples/training_flan-t5-xl.ipynb) - fine-tune full FLAN-T5 model on text summarization
-- __TBA__ - inferencing a large language model with LLM.8bit + tensor_parallel
+- [`tensor_parallel int8 LLM`](https://www.kaggle.com/code/blacksamorez/tensor-parallel-int8-llm/) - inferencing a large language model with LLM.8bit + tensor_parallel
 - __TBA__ - defining custom parallelism strategy
 
 
 Advanced parameters to `tensor_parallel`:
 - `device_ids: List[device]` - which devices to use; defaults to all available GPUs
 - `output_device: device` - model outputs will have this device
-- `config: tp.Config` - use custom parallelism strategy, see [`slicing_configs.py`](./tensor_parallel/slicing_configs.py)
+- `tensor_parallel_config: tp.Config` - use custom parallelism strategy, see [`slicing_configs.py`](./tensor_parallel/slicing_configs.py)
 - `distributed: bool` - if True, use torch.distributed backend instead of threading (requires `torchrun`)
 - `sharded: bool` - if True, find all trainable parameters that weren't split by Tensor Parallelism and split them using [ZeRO-3 algorithm](https://deepspeed.readthedocs.io/en/latest/zero3.html).
    - weights will be split between GPUs and re-assembled before each forward pass
