@@ -33,6 +33,9 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
     world_size = len(devices)
     num_heads = model_config.n_head
     head_dim = model_config.hidden_size // num_heads
+    gather_kv_across_ranks = CollectiveOperation(
+        world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
+    )  # this operation ensures that we get attention cache for all heads on each device
 
     return Config(
         state_rules={
@@ -59,7 +62,7 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
             # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
         output_rules={
-            r".*self_attention$": {1: gather_kv(world_size=world_size)},
+            r".*self_attention$": {1: gather_kv_across_ranks},
             r".*self_attention\.dense$": {0: "sum"},
             r".*mlp\.dense_4h_to_h$": {0: "sum"},
             r".*word_embeddings$": {0: "gather -1"},
@@ -73,6 +76,9 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
     world_size = len(devices)
     num_heads = model_config.num_heads
     head_dim = model_config.d_kv
+    gather_kv_across_ranks = CollectiveOperation(
+        world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
+    )  # this operation ensures that we get attention cache for all heads on each device
 
     def select_kv_for_rank(*kvs, rank):
         if kvs[0] is None:
@@ -109,11 +115,11 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
         },
         input_rules={
             r".*SelfAttention$": {"past_key_value": select_kv_for_rank},
-            r".*lm_head$": {0: Split(world_size=world_size, dim=-1)},  # note: we need to split lm_head inputs because
+            r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
             # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
         output_rules={
-            r".*SelfAttention$": {0: "sum", 1: gather_kv(world_size=world_size)},
+            r".*SelfAttention$": {0: "sum", 1: gather_kv_across_ranks},
             r".*DenseReluDense$": {0: "sum"},
             r".*shared$": {0: "gather -1"},
             r".*lm_head$": {0: "sum"},
