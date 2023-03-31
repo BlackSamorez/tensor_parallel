@@ -143,16 +143,16 @@ def get_bert_config(model_config: BertConfig, devices: Sequence[torch.device]) -
             r"self\.key\.(weight|bias)": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
             r"self\.value\.(weight|bias)": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
             r".*attention\.output\.dense\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
-            r".*attention\.output\.dense\.bias$": "scale",
+            r".*attention\.output\.dense\.bias$": Scale(world_size=world_size),
             # BertIntermediate
-            r".*intermediate\.dense\.(weight|bias)$": "split 0",
+            r".*intermediate\.dense\.(weight|bias)$": Split(world_size=world_size, dim=0),
             # BertOutput
-            r".*[0-9]\.output\.dense\.weight$": "split 1",
-            r".*[0-9]\.output\.dense\.bias$": "scale",
+            r".*[0-9]\.output\.dense\.weight$": Split(world_size=world_size, dim=1),
+            r".*[0-9]\.output\.dense\.bias$": Scale(world_size=world_size),
             # BertEmbeddings
-            r".*word_embeddings\.weight$": "split 1",
-            r".*position_embeddings\.weight$": "split 1",
-            r".*token_type_embeddings\.weight$": "split 1",
+            r".*word_embeddings\.weight$": Split(world_size=world_size, dim=1),
+            r".*position_embeddings\.weight$": Split(world_size=world_size, dim=1),
+            r".*token_type_embeddings\.weight$": Split(world_size=world_size, dim=1),
         },
         input_rules={},
         output_rules={
@@ -180,39 +180,40 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
         world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
     )  # this operation ensures that we get attention cache for all heads on each device
 
-    def split_gpt2_qkv(tensor: torch.Tensor, rank: int, dim: int, world_size: int, head_dim: int, num_parts: int):
-        assert tensor.shape[dim] % num_parts == 0
-        dims = list(tensor.shape)
-        dims.insert(-1, num_parts)
-        dims[-1] //= num_parts
+    class SplitGPT2QKV(SplitInChunks):
+        def __call__(self, tensor: torch.Tensor, rank: int) -> torch.Tensor:
+            assert tensor.shape[self.dim] % 3 == 0
+            dims = list(tensor.shape)
+            dims.insert(-1, 3)
+            dims[-1] //= 3
 
-        some_tensor = tensor.view(*dims)
-        new_tensor = torch.cat(
-            [
-                split_heads(some_tensor[..., i, :], dim=-1, head_dim=head_dim, rank=rank, world_size=world_size)
-                for i in range(num_parts)
-            ],
-            dim=-1,
-        )
-        return new_tensor
+            some_tensor = tensor.view(*dims)
+            new_tensor = torch.cat(
+                [
+                    split_heads(some_tensor[..., i, :], dim=-1, head_dim=head_dim, rank=rank, world_size=world_size)
+                    for i in range(3)
+                ],
+                dim=-1,
+            )
+            return new_tensor
 
     return Config(
         state_rules={
             # GPT2Attention
-            r".*c_attn\.weight$": partial(split_gpt2_qkv, dim=1, head_dim=head_dim, num_parts=3, world_size=world_size),
-            r".*c_attn\.bias$": partial(split_gpt2_qkv, dim=0, head_dim=head_dim, num_parts=3, world_size=world_size),
-            r".*q_attn\.weight$": partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
-            r".*q_attn\.bias$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-            r".*attn\.c_proj\.weight$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-            r".*attn\.c_proj\.bias$": "scale",
+            r".*c_attn\.weight$": SplitGPT2QKV(world_size=world_size, dim=1, chunk_size=head_dim),
+            r".*c_attn\.bias$": SplitGPT2QKV(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*q_attn\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
+            r".*q_attn\.bias$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*attn\.c_proj\.weight$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*attn\.c_proj\.bias$": Scale(world_size=world_size),
             # GPT2MLP
-            r".*c_fc\.weight$": "split 1",
-            r".*c_fc\.bias$": "split 0",
-            r".*mlp\.c_proj\.weight$": "split 0",
-            r".*mlp\.c_proj\.bias$": "scale",
+            r".*c_fc\.weight$": Split(world_size=world_size, dim=1),
+            r".*c_fc\.bias$": Split(world_size=world_size, dim=0),
+            r".*mlp\.c_proj\.weight$": Split(world_size=world_size, dim=0),
+            r".*mlp\.c_proj\.bias$": Scale(world_size=world_size),
             # GPT2Model
-            r".*wte\.weight$": "split 1",
-            r".*wpe\.weight$": "split 1",
+            r".*wte\.weight$": Split(world_size=world_size, dim=1),
+            r".*wpe\.weight$": Split(world_size=world_size, dim=1),
             # GPT2LMHeadModel
             # note: ^-- lm_head.weight is tied with word_embeddings
         },
@@ -259,19 +260,19 @@ def get_gpt_neox_config(model_config: GPTNeoXConfig, devices: Sequence[torch.dev
     return Config(
         state_rules={
             # GPTNeoXAttention
-            r".*attention\.query_key_value\.(weight|bias)$": partial(
-                split_heads, dim=0, head_dim=head_dim * 3, world_size=world_size
+            r".*attention\.query_key_value\.(weight|bias)$": SplitInChunks(
+                world_size=world_size, dim=0, chunk_size=head_dim * 3
             ),
-            r".*attention\.dense\.weight$": partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
-            r".*attention\.dense\.bias$": "scale",
+            r".*attention\.dense\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
+            r".*attention\.dense\.bias$": Scale(world_size=world_size),
             # GPTNeoXMLP
-            r".*mlp\.dense_h_to_4h\.(weight|bias)$": "split 0",
-            r".*mlp\.dense_4h_to_h\.weight$": "split 1",
-            r".*mlp\.dense_4h_to_h\.bias$": "scale",
+            r".*mlp\.dense_h_to_4h\.(weight|bias)$": Split(world_size=world_size, dim=0),
+            r".*mlp\.dense_4h_to_h\.weight$": Split(world_size=world_size, dim=1),
+            r".*mlp\.dense_4h_to_h\.bias$": Scale(world_size=world_size),
             # GPTNeoXModel
-            r".*embed_in\.weight$": "split 1",
+            r".*embed_in\.weight$": Split(world_size=world_size, dim=1),
             # GPTNeoXForCausalLM
-            r".*embed_out\.(weight|bias)$": "split 0",
+            r".*embed_out\.(weight|bias)$": Split(world_size=world_size, dim=0),
         },
         input_rules={
             r".*attention$": {"layer_past": select_kv_for_rank},
@@ -300,20 +301,21 @@ def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.devi
         world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
     )  # this operation ensures that we get attention cache for all heads on each device
 
-    def split_codegen_qkv(tensor: torch.Tensor, rank: int, world_size: int, head_dim: int):
-        tensor = tensor.permute(1, 0)
-        tensor = (
-            tensor.reshape(tensor.shape[0], 4, 3, -1, head_dim)
-            .permute(0, 1, 3, 2, 4)
-            .reshape(tensor.shape[0], tensor.shape[1])
-        )
-        tensor = split_heads(tensor, dim=1, head_dim=12 * head_dim, rank=rank, world_size=world_size)
-        result = (
-            tensor.reshape(tensor.shape[0], 4, -1, 3, head_dim)
-            .permute(0, 1, 3, 2, 4)
-            .reshape(tensor.shape[0], tensor.shape[1])
-        )
-        return result.permute(1, 0)
+    class SplitCodegenQKV(SplitInChunks):
+        def __call__(self, tensor: torch.Tensor, rank: int) -> torch.Tensor:
+            tensor = tensor.permute(1, 0)
+            tensor = (
+                tensor.reshape(tensor.shape[0], 4, 3, -1, head_dim)
+                .permute(0, 1, 3, 2, 4)
+                .reshape(tensor.shape[0], tensor.shape[1])
+            )
+            tensor = split_heads(tensor, dim=1, head_dim=12 * head_dim, rank=rank, world_size=world_size)
+            result = (
+                tensor.reshape(tensor.shape[0], 4, -1, 3, head_dim)
+                .permute(0, 1, 3, 2, 4)
+                .reshape(tensor.shape[0], tensor.shape[1])
+            )
+            return result.permute(1, 0)
 
     def split_codegen_num_heads(num_heads: int, *, rank: int, world_size: int):
         return 4 * split_num_heads(num_heads // 4, rank=rank, world_size=world_size)
@@ -321,16 +323,16 @@ def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.devi
     return Config(
         state_rules={
             # CodeGenAttention
-            r".*attn\.qkv_proj\.weight$": partial(split_codegen_qkv, head_dim=head_dim, world_size=world_size),
-            r".*attn\.out_proj\.weight$": partial(split_heads, dim=1, head_dim=4 * head_dim, world_size=world_size),
+            r".*attn\.qkv_proj\.weight$": SplitCodegenQKV(world_size=world_size, chunk_size=head_dim),
+            r".*attn\.out_proj\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=4 * head_dim),
             # CodeGenMLP
-            r".*mlp\.fc_in\.(weight|bias)$": "split 0",
-            r".*mlp\.fc_out\.weight$": "split 1",
-            r".*mlp\.fc_out\.bias$": "scale",
+            r".*mlp\.fc_in\.(weight|bias)$": Split(world_size=world_size, dim=0),
+            r".*mlp\.fc_out\.weight$": Split(world_size=world_size, dim=1),
+            r".*mlp\.fc_out\.bias$": Scale(world_size=world_size),
             # CodeGenModel
-            r".*wte\.weight$": "split 1",
+            r".*wte\.weight$": Split(world_size=world_size, dim=1),
             # CodeGenForCausalLM
-            r".*lm_head\.(weight|bias)$": "split 0",
+            r".*lm_head\.(weight|bias)$": Split(world_size=world_size, dim=0),
         },
         input_rules={
             r".*attn$": {"layer_past": select_kv_for_rank},
