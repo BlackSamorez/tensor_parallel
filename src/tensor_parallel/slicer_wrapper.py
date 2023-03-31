@@ -163,6 +163,20 @@ def find_matching_actions(action_type: str, name: str, rules: ModuleRules) -> Di
     return found_actions
 
 
+def apply_action(input: torch.Tensor, action: StateAction, *, rank: int, world_size: int):
+    if isinstance(action, tuple):
+        action = action[0]  # get splitting action
+    if callable(action):
+        return action(input, rank=rank)  # allreduce/allgather or a custom user-defined callable
+    action_type, *opts = action.split()
+    if action_type == "split":
+        dim = int(opts[0])
+        return torch.tensor_split(input, world_size, dim=dim)[rank]
+    if action_type == "scale":
+        return input / world_size
+    raise Exception(f"unexpected action {action_type}; supported actions: split, scale, or custom user-defined")
+
+
 def create_collective_ops(rules: dict, devices: Sequence[torch.device]):
     """Initialize collective thread-parallel operations from config rules"""
     world_size = len(devices)
@@ -256,7 +270,7 @@ def process_input(input_actions: Dict[Arg, str], rank: int, world_size: int, *ar
     extended_kwargs = dict(kwargs)
     extended_kwargs.update(enumerate(args))
     for target, action in input_actions.items():
-        extended_kwargs[target] = action(extended_kwargs.get(target), rank=rank)
+        extended_kwargs[target] = apply_action(extended_kwargs.get(target), action, rank=rank, world_size=world_size)
     args = [extended_kwargs.pop(i) for i in range(len(args))]
     return args, extended_kwargs
 

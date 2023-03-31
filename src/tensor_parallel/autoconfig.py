@@ -11,44 +11,46 @@ from tensor_parallel.state_actions import Scale, Split, SplitInsideChunks
 
 def get_default_config(module: nn.Module, device_ids: Sequence[torch.device]) -> Config:
     """Make a generic config that wraps individual linear, embedding and convolutional layers"""
-    config = Config({}, {}, {}, {})
     emb_weights = {m.weight for m in module.modules() if isinstance(m, (nn.Embedding, nn.EmbeddingBag))}
 
+    state_rules = {}
+    input_rules = {}
+    output_rules = {}
     for name, module in module.named_modules():
         if isinstance(module, (nn.Embedding, nn.EmbeddingBag)):
             assert module.max_norm is None or module.norm_type < 2
             assert getattr(module, "bias", None) is None or module.bias.shape == module.embedding_dim
-            config.state_rules[f"^{name}.weight$"] = Split(world_size=len(device_ids), dim=1)
+            state_rules[f"^{name}.weight$"] = Split(world_size=len(device_ids), dim=1)
             if hasattr(module, "bias"):
-                config.state_rules[f"^{name}.bias$"] = Split(world_size=len(device_ids), dim=0)
-            config.output_rules[f"^{name}$"] = {0: "gather -1"}
+                state_rules[f"^{name}.bias$"] = Split(world_size=len(device_ids), dim=0)
+            output_rules[f"^{name}$"] = {0: "gather -1"}
         elif isinstance(module, nn.Linear):
             assert module.weight.shape == (module.out_features, module.in_features)
             assert module.bias is None or module.bias.shape == (module.out_features,)
             if module.weight not in emb_weights:  # regular linear layer
-                config.state_rules[f"^{name}.(weight|bias)$"] = Split(world_size=len(device_ids), dim=0)
-                config.output_rules[f"^{name}$"] = {0: "gather -1"}
+                state_rules[f"^{name}.(weight|bias)$"] = Split(world_size=len(device_ids), dim=0)
+                output_rules[f"^{name}$"] = {0: "gather -1"}
             else:
                 # linear weight tied with embeddings; this is a popular special case for language models;
                 # since embedding weight will be sliced over dim 1, we should adapt to the input-sliced weight
-                config.input_rules[f"^{name}$"] = {0: Split(world_size=len(device_ids), dim=-1)}
-                config.output_rules[f"^{name}$"] = {0: "sum"}
+                input_rules[f"^{name}$"] = {0: Split(world_size=len(device_ids), dim=-1)}
+                output_rules[f"^{name}$"] = {0: "sum"}
                 if module.bias is not None:
-                    config.state_rules[f"^{name}.bias$"] = Scale(world_size=len(device_ids))
+                    state_rules[f"^{name}.bias$"] = Scale(world_size=len(device_ids))
         elif isinstance(module, conv._ConvNd) and module.groups == 1:
             shape = [module.out_channels, module.in_channels] + list(module.kernel_size)
             shape[:2] = shape[:2][::-1] if module.transposed else shape[:2]
             shape = tuple(shape)
             assert module.weight.shape == shape, f"{module.weight.shape} != {shape}"
             assert module.bias is None or module.bias.shape == (module.out_channels,), module.bias.shape
-            config.state_rules[f"^{name}.weight$"] = (
+            state_rules[f"^{name}.weight$"] = (
                 Split(world_size=len(device_ids), dim=1)
                 if module.transposed
                 else Split(world_size=len(device_ids), dim=0)
             )
             if module.bias is not None:
-                config.state_rules[f"^{name}.bias$"] = Split(world_size=len(device_ids), dim=0)
-            config.output_rules[f"^{name}$"] = {0: "gather 1"}
+                state_rules[f"^{name}.bias$"] = Split(world_size=len(device_ids), dim=0)
+            output_rules[f"^{name}$"] = {0: "gather 1"}
         elif isinstance(module, conv._ConvNd) and module.groups != 1:
             # group conv: split each group individually over input channels to avoid changing module.groups
             groups = module.groups
@@ -59,15 +61,13 @@ def get_default_config(module: nn.Module, device_ids: Sequence[torch.device]) ->
             assert module.weight.shape == shape, f"{module.weight.shape} != {shape}"
             assert module.bias is None or module.bias.shape == (module.out_channels,), module.bias.shape
             if not module.transposed:
-                config.state_rules[f"^{name}.weight$"] = Split(world_size=len(device_ids), dim=1)
+                state_rules[f"^{name}.weight$"] = Split(world_size=len(device_ids), dim=1)
             else:
-                config.state_rules[f"^{name}.weight$"] = SplitInsideChunks(
+                state_rules[f"^{name}.weight$"] = SplitInsideChunks(
                     world_size=len(device_ids), dim=0, num_chunks=groups
                 )
             if module.bias is not None:
-                config.state_rules[f"^{name}.bias$"] = Scale(world_size=len(device_ids))
-            config.input_rules[f"^{name}$"] = {
-                0: SplitInsideChunks(world_size=len(device_ids), dim=1, num_chunks=groups)
-            }
-            config.output_rules[f"^{name}$"] = {0: "sum"}
-    return config
+                state_rules[f"^{name}.bias$"] = Scale(world_size=len(device_ids))
+            input_rules[f"^{name}$"] = {0: SplitInsideChunks(world_size=len(device_ids), dim=1, num_chunks=groups)}
+            output_rules[f"^{name}$"] = {0: "sum"}
+    return Config(state_rules, input_rules, output_rules, {})

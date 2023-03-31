@@ -326,7 +326,7 @@ def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.devi
     return Config(
         state_rules={
             # CodeGenAttention
-            r".*attn\.qkv_proj\.weight$": SplitCodegenQKV(world_size=world_size, chunk_size=head_dim),
+            r".*attn\.qkv_proj\.weight$": SplitCodegenQKV(world_size=world_size, chunk_size=head_dim, dim=0),
             r".*attn\.out_proj\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=4 * head_dim),
             # CodeGenMLP
             r".*mlp\.fc_in\.(weight|bias)$": Split(world_size=world_size, dim=0),
