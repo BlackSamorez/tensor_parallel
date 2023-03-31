@@ -161,9 +161,7 @@ class TensorParallel(nn.Module):
                         name: tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
                     }
                     tensor_shards = dict(sorted(tensor_shards.items()))  # basically sort by shard number
-                    state_dict[module_prefix + unsharded_name] = apply_inverse_action(  # add aggregated tensor entry
-                        list(tensor_shards.values()), action, len(self.module_shards)
-                    )
+                    state_dict[module_prefix + unsharded_name] = action.undo(list(tensor_shards.values()))
                     break
             else:
                 state_dict[module_prefix + unsharded_name] = next(

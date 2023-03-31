@@ -27,10 +27,10 @@ from tensor_parallel.communications import (
     NCCLAllGather,
     NCCLAllReduce,
 )
+from tensor_parallel.slicing_actions import StateAction
 
 Arg = Union[int, str]
 Action = Union[str, Callable]  # actions describe what to do with tensors
-StateAction = Union[Action, Tuple[Action, Action]]  # actions describe what to do with tensors
 StateRules = Dict[re.Pattern, StateAction]  # state rules are pattern-matched actions on module state dict
 ModuleRules = Dict[re.Pattern, Dict[Arg, Action]]  # module rules are pattern-matched actions on inputs/outputs/attrs
 
@@ -163,31 +163,6 @@ def find_matching_actions(action_type: str, name: str, rules: ModuleRules) -> Di
     return found_actions
 
 
-def apply_action(input: torch.Tensor, action: StateAction, *, rank: int, world_size: int):
-    if isinstance(action, tuple):
-        action = action[0]  # get splitting action
-    return action(input, rank=rank)  # allreduce/allgather or a custom user-defined callable
-
-
-def apply_inverse_action(tensors: Sequence[torch.Tensor], action: StateAction, world_size: int) -> torch.Tensor:
-    assert isinstance(action, str) or isinstance(
-        action, tuple
-    ), "No inverse state action specified for custom action. Can't aggregate shards"
-
-    if isinstance(action, tuple):
-        action = action[1]  # get aggregating action
-
-    if callable(action):
-        return action(tensors, world_size)
-    action_type, *opts = action.split()
-    if action_type == "split":
-        dim = int(opts[0])
-        return torch.cat([tensor.cpu() for tensor in tensors], dim=dim)
-    if action_type == "scale":
-        return tensors[0] * world_size
-    raise Exception(f"Unexpected inverse action {action_type}; supported actions: split, scale, or custom user-defined")
-
-
 def create_collective_ops(rules: dict, devices: Sequence[torch.device]):
     """Initialize collective thread-parallel operations from config rules"""
     world_size = len(devices)
@@ -243,7 +218,7 @@ def process_state_(
     for name, state in chain(sharded_module.named_parameters(), sharded_module.named_buffers()):
         for pattern, action in config.state_rules.items():
             if pattern.search(name) is not None:
-                new_data = apply_action(source_tensors[name], action, rank=rank, world_size=world_size)
+                new_data = action.do(source_tensors[name], rank=rank)
                 unused_patterns.discard(pattern)
                 break
         else:
