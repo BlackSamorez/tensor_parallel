@@ -34,9 +34,6 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
     num_heads = model_config.n_head
     head_dim = model_config.hidden_size // num_heads
 
-    def select_kv_for_rank(present_key_value_state, rank):
-        return nested_map(lambda x: x[rank] if isinstance(x, PerDeviceTensors) else x, present_key_value_state)
-
     return Config(
         state_rules={
             # BloomAttention
