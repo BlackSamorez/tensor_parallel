@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn.modules import conv
 
 from tensor_parallel.slicer_wrapper import Config
-from tensor_parallel.slicing_actions import Scale, Split, SplitInsideChunks
+from tensor_parallel.state_actions import Scale, Split, SplitInsideChunks
 
 
 def get_default_config(module: nn.Module, device_ids: Sequence[torch.device]) -> Config:

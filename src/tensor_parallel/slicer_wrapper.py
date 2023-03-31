@@ -27,7 +27,7 @@ from tensor_parallel.communications import (
     NCCLAllGather,
     NCCLAllReduce,
 )
-from tensor_parallel.slicing_actions import StateAction
+from tensor_parallel.state_actions import StateAction
 
 Arg = Union[int, str]
 Action = Union[str, Callable]  # actions describe what to do with tensors
@@ -218,7 +218,7 @@ def process_state_(
     for name, state in chain(sharded_module.named_parameters(), sharded_module.named_buffers()):
         for pattern, action in config.state_rules.items():
             if pattern.search(name) is not None:
-                new_data = action.do(source_tensors[name], rank=rank)
+                new_data = action(source_tensors[name], rank=rank)
                 unused_patterns.discard(pattern)
                 break
         else:
@@ -248,7 +248,7 @@ def process_attrs_(module: nn.Module, actions: Dict[Arg, str], rank: int, world_
     """Modify module properties in-place"""
     assert not getattr(module, "__tensor_parallel_process_attrs", False), "process_attrs was called more than once"
     for attr, action in actions.items():
-        setattr(module, attr, apply_action(getattr(module, attr), action, rank=rank, world_size=world_size))
+        setattr(module, attr, action(getattr(module, attr), rank=rank))
     module.__tensor_parallel_process_attrs = True
 
 
@@ -256,7 +256,7 @@ def process_input(input_actions: Dict[Arg, str], rank: int, world_size: int, *ar
     extended_kwargs = dict(kwargs)
     extended_kwargs.update(enumerate(args))
     for target, action in input_actions.items():
-        extended_kwargs[target] = apply_action(extended_kwargs.get(target), action, rank=rank, world_size=world_size)
+        extended_kwargs[target] = action(extended_kwargs.get(target), rank=rank)
     args = [extended_kwargs.pop(i) for i in range(len(args))]
     return args, extended_kwargs
 
@@ -270,7 +270,7 @@ def process_output(
         output_dict = process_output(dict(enumerate(output)), output_actions, rank=rank, world_size=world_size)
         return type(output)((output_dict[i] for i in range(len(output))))
     for target, action in output_actions.items():
-        output[target] = apply_action(output.get(target), action, rank=rank, world_size=world_size)
+        output[target] = action(output.get(target), rank=rank)
     return output
 
 

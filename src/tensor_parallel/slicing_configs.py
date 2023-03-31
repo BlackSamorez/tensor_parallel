@@ -13,17 +13,17 @@ import torch
 from transformers import BertConfig, BloomConfig, CodeGenConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
 
 from tensor_parallel.communications import CollectiveOperation
+from tensor_parallel.general_actions import (
+    gather_kv,
+    select_kv_for_rank,
+    split_alibi,
+    split_heads,
+    split_inner_dim,
+    split_num_heads,
+)
 from tensor_parallel.per_device_tensors import PerDeviceTensors
 from tensor_parallel.slicer_wrapper import Config
-from tensor_parallel.slicing_actions import (
-    Scale,
-    Split,
-    SplitAlibi,
-    SplitDimInChunks,
-    SplitInChunks,
-    SplitNumChunks,
-    gather_kv,
-)
+from tensor_parallel.state_actions import Scale, Split, SplitInChunks, StateAction
 from tensor_parallel.utils import nested_map
 
 ConfigGetter = Callable[[PretrainedConfig, Sequence[torch.device]], Config]
@@ -40,14 +40,10 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
     return Config(
         state_rules={
             # BloomAttention
-            r".*self_attention\.query_key_value\.(weight|bias)$": (
-                SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim * 3),
-                "split 0",
+            r".*self_attention\.query_key_value\.(weight|bias)$": SplitInChunks(
+                world_size=world_size, dim=0, chunk_size=head_dim * 3
             ),
-            r".*self_attention\.dense\.weight$": (
-                SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
-                "split 1",
-            ),
+            r".*self_attention\.dense\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
             r".*self_attention\.dense\.bias$": Scale(world_size=world_size),
             # BloomMLP
             r".*mlp\.dense_h_to_4h\.(weight|bias)$": Split(world_size=world_size, dim=0),
@@ -60,7 +56,7 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
         input_rules={
             r".*self_attention$": {
                 "layer_past": select_kv_for_rank,
-                "alibi": SplitAlibi(world_size=world_size, num_heads=num_heads),
+                "alibi": partial(split_alibi, num_heads=num_heads, world_size=world_size),
             },
             r".*lm_head$": {0: Split(world_size=world_size, dim=-1)},  # note: we need to split lm_head inputs because
             # ... lm_head's weights (tied embeddings) are already split across input dimension
@@ -72,7 +68,7 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
             r".*word_embeddings$": {0: "gather -1"},
             r".*lm_head$": {0: "sum"},
         },
-        attr_rules={r".*self_attention$": {"num_heads": SplitNumChunks(world_size=world_size)}},
+        attr_rules={r".*self_attention$": {"num_heads": partial(split_num_heads, world_size=world_size)}},
     )
 
 
@@ -98,23 +94,11 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
     return Config(
         state_rules={
             # T5Attention
-            r".*SelfAttention\.q\.(weight|bias)$": (
-                SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
-                "split 0",
-            ),
-            r".*SelfAttention\.k\.(weight|bias)$": (
-                SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
-                "split 0",
-            ),
-            r".*SelfAttention\.v\.(weight|bias)$": (
-                SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
-                "split 0",
-            ),
+            r".*SelfAttention\.q\.(weight|bias)$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*SelfAttention\.k\.(weight|bias)$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*SelfAttention\.v\.(weight|bias)$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
             r".*relative_attention_bias\.weight$": Split(world_size=world_size, dim=1),
-            r".*SelfAttention\.o\.weight$": (
-                SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
-                "split 1",
-            ),
+            r".*SelfAttention\.o\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
             # T5DenseGatedActDense
             r".*DenseReluDense\.wi\.weight$": Split(world_size=world_size, dim=0),
             r".*DenseReluDense\.wi_0\.weight$": Split(world_size=world_size, dim=0),
@@ -139,12 +123,10 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
         },
         attr_rules={
             r".*SelfAttention$": {
-                "n_heads": SplitNumChunks(world_size=world_size),
-                "inner_dim": SplitDimInChunks(world_size=world_size, num_chunks=num_heads),
+                "n_heads": partial(split_num_heads, world_size=world_size),
+                "inner_dim": partial(split_inner_dim, num_heads=model_config.num_heads, world_size=world_size),
             },
-            r".*relative_attention_bias$": {
-                "embedding_dim": SplitDimInChunks(world_size=world_size, num_chunks=num_heads)
-            },
+            r".*relative_attention_bias$": {"embedding_dim": partial(split_num_heads, world_size=world_size)},
         },
     )
 
@@ -157,22 +139,10 @@ def get_bert_config(model_config: BertConfig, devices: Sequence[torch.device]) -
     return Config(
         state_rules={
             # BertAttention
-            r".*self\.query\.(weight|bias)$": (
-                partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "split 0",
-            ),
-            r"self\.key\.(weight|bias)": (
-                partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "split 0",
-            ),
-            r"self\.value\.(weight|bias)": (
-                partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "split 0",
-            ),
-            r".*attention\.output\.dense\.weight$": (
-                partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
-                "split 1",
-            ),
+            r".*self\.query\.(weight|bias)$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r"self\.key\.(weight|bias)": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r"self\.value\.(weight|bias)": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*attention\.output\.dense\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
             r".*attention\.output\.dense\.bias$": "scale",
             # BertIntermediate
             r".*intermediate\.dense\.(weight|bias)$": "split 0",
@@ -229,20 +199,11 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
     return Config(
         state_rules={
             # GPT2Attention
-            r".*c_attn\.weight$": (
-                partial(split_gpt2_qkv, dim=1, head_dim=head_dim, num_parts=3, world_size=world_size),
-                "split 1",
-            ),
-            r".*c_attn\.bias$": (
-                partial(split_gpt2_qkv, dim=0, head_dim=head_dim, num_parts=3, world_size=world_size),
-                "split 0",
-            ),
-            r".*q_attn\.weight$": (partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size), "split 1"),
-            r".*q_attn\.bias$": (partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size), "split 0"),
-            r".*attn\.c_proj\.weight$": (
-                partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "split 0",
-            ),
+            r".*c_attn\.weight$": partial(split_gpt2_qkv, dim=1, head_dim=head_dim, num_parts=3, world_size=world_size),
+            r".*c_attn\.bias$": partial(split_gpt2_qkv, dim=0, head_dim=head_dim, num_parts=3, world_size=world_size),
+            r".*q_attn\.weight$": partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
+            r".*q_attn\.bias$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
+            r".*attn\.c_proj\.weight$": partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
             r".*attn\.c_proj\.bias$": "scale",
             # GPT2MLP
             r".*c_fc\.weight$": "split 1",
@@ -298,14 +259,10 @@ def get_gpt_neox_config(model_config: GPTNeoXConfig, devices: Sequence[torch.dev
     return Config(
         state_rules={
             # GPTNeoXAttention
-            r".*attention\.query_key_value\.(weight|bias)$": (
-                partial(split_heads, dim=0, head_dim=head_dim * 3, world_size=world_size),
-                "split 0",
+            r".*attention\.query_key_value\.(weight|bias)$": partial(
+                split_heads, dim=0, head_dim=head_dim * 3, world_size=world_size
             ),
-            r".*attention\.dense\.weight$": (
-                partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
-                "split 1",
-            ),
+            r".*attention\.dense\.weight$": partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
             r".*attention\.dense\.bias$": "scale",
             # GPTNeoXMLP
             r".*mlp\.dense_h_to_4h\.(weight|bias)$": "split 0",
@@ -364,14 +321,8 @@ def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.devi
     return Config(
         state_rules={
             # CodeGenAttention
-            r".*attn\.qkv_proj\.weight$": (
-                partial(split_codegen_qkv, head_dim=head_dim, world_size=world_size),
-                "split 0",
-            ),
-            r".*attn\.out_proj\.weight$": (
-                partial(split_heads, dim=1, head_dim=4 * head_dim, world_size=world_size),
-                "split 1",
-            ),
+            r".*attn\.qkv_proj\.weight$": partial(split_codegen_qkv, head_dim=head_dim, world_size=world_size),
+            r".*attn\.out_proj\.weight$": partial(split_heads, dim=1, head_dim=4 * head_dim, world_size=world_size),
             # CodeGenMLP
             r".*mlp\.fc_in\.(weight|bias)$": "split 0",
             r".*mlp\.fc_out\.weight$": "split 1",
