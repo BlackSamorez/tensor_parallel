@@ -13,7 +13,7 @@ import torch
 from transformers import BertConfig, BloomConfig, CodeGenConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
 
 from tensor_parallel.communications import CollectiveOperation
-from tensor_parallel.general_actions import (
+from tensor_parallel.aux_actions import (
     gather_kv,
     select_kv_for_rank,
     split_alibi,
