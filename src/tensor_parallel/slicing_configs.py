@@ -37,6 +37,8 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
         world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
     )  # this operation ensures that we get attention cache for all heads on each device
 
+    _split_alibi = partial(split_alibi, num_heads=num_heads, world_size=world_size)
+
     return Config(
         state_rules={
             # BloomAttention
@@ -54,11 +56,8 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
             # note: ^-- lm_head.weight is tied with word_embeddings
         },
         input_rules={
-            r".*self_attention$": {
-                "layer_past": select_kv_for_rank,
-                "alibi": partial(split_alibi, num_heads=num_heads, world_size=world_size),
-            },
-            r".*lm_head$": {0: Split(world_size=world_size, dim=-1)},  # note: we need to split lm_head inputs because
+            r".*self_attention$": {"layer_past": select_kv_for_rank, "alibi": _split_alibi},
+            r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
             # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
         output_rules={
@@ -76,6 +75,7 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
     world_size = len(devices)
     num_heads = model_config.num_heads
     head_dim = model_config.d_kv
+
     gather_kv_across_ranks = CollectiveOperation(
         world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
     )  # this operation ensures that we get attention cache for all heads on each device
