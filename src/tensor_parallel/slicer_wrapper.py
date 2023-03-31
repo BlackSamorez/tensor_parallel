@@ -11,7 +11,7 @@ import re
 from copy import deepcopy
 from functools import partial
 from itertools import chain
-from typing import Callable, Dict, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Sequence, Tuple, Union
 
 import torch
 import torch.distributed
@@ -30,7 +30,7 @@ from tensor_parallel.communications import (
 from tensor_parallel.state_actions import StateAction
 
 Arg = Union[int, str]
-Action = Union[str, Callable]  # actions describe what to do with tensors
+Action = Callable[[Any, int], Any]  # actions describe what to do with tensors
 StateRules = Dict[re.Pattern, StateAction]  # state rules are pattern-matched actions on module state dict
 ModuleRules = Dict[re.Pattern, Dict[Arg, Action]]  # module rules are pattern-matched actions on inputs/outputs/attrs
 
