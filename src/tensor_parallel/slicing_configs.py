@@ -12,7 +12,6 @@ from typing import Callable, Dict, Sequence
 import torch
 from transformers import BertConfig, BloomConfig, CodeGenConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
 
-from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.aux_actions import (
     gather_kv,
     select_kv_for_rank,
@@ -21,6 +20,7 @@ from tensor_parallel.aux_actions import (
     split_inner_dim,
     split_num_heads,
 )
+from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.per_device_tensors import PerDeviceTensors
 from tensor_parallel.slicer_wrapper import Config
 from tensor_parallel.state_actions import Scale, Split, SplitInChunks, StateAction
