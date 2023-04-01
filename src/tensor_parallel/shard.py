@@ -1,11 +1,12 @@
 import logging
 from copy import deepcopy
 from itertools import chain
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 from torch import nn
 
+from tensor_parallel.autoconfig import get_default_config
 from tensor_parallel.config import Config, MappedActions, ModuleRules
 from tensor_parallel.wrapper import TensorParallelWrapper
 
@@ -64,7 +65,11 @@ def make_shard(module: nn.Module, device: torch.device, config: Config, *, rank:
     return unique_wrappers.get(shard, shard)  # wrap the root module if needed
 
 
-def make_distributed_shard(config: Config, module: nn.Module, device: torch.device):
+def make_distributed_shard(config: Optional[Config], module: nn.Module, device: torch.device):
+    if config is None:
+        config = get_default_config(module, device_ids=range(torch.distributed.get_world_size()))
+        logger.info("Using automatic config: sharding individual linear/conv/emb layers")
+
     config_with_ops = config.create_collective_ops([torch.device("cpu")] * torch.distributed.get_world_size())
     return make_shard(
         module,

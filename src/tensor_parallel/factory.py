@@ -6,7 +6,6 @@ import torch.distributed
 from torch import nn
 from transformers import PreTrainedModel
 
-from tensor_parallel.autoconfig import get_default_config
 from tensor_parallel.config import Config
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
 from tensor_parallel.sharding import Sharded
@@ -56,9 +55,6 @@ def tensor_parallel(
             device_ids = [torch.device("cuda" if torch.cuda.is_available() else "cpu")]
         assert len(device_ids) == 1, "if distributed=True, please specify a single (current) device"
         assert not sharded, "distributed + sharded mode is not implemented, please keep one"
-        if tensor_parallel_config is None:
-            tensor_parallel_config = get_default_config(module, device_ids=range(torch.distributed.get_world_size()))
-            logger.info("Using automatic config: sharding individual linear/conv/emb layers")
 
         return tensor_parallel_config.make_distributed_shard(module, device=torch.device(device_ids[0]), **kwargs)
     else:
