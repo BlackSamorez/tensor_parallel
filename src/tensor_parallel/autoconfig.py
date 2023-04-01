@@ -5,7 +5,7 @@ import torch.distributed
 from torch import nn
 from torch.nn.modules import conv
 
-from tensor_parallel.slicer_wrapper import Config
+from tensor_parallel.config import Config
 from tensor_parallel.state_actions import Scale, Split, SplitInsideChunks
 
 

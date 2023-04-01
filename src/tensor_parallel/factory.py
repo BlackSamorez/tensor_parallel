@@ -7,9 +7,9 @@ from torch import nn
 from transformers import PreTrainedModel
 
 from tensor_parallel.autoconfig import get_default_config
+from tensor_parallel.config import Config
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
 from tensor_parallel.sharding import Sharded
-from tensor_parallel.slicer_wrapper import Config
 from tensor_parallel.tensor_parallel import TensorParallel
 
 logger = logging.getLogger(__file__)
