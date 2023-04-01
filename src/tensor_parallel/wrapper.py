@@ -4,13 +4,13 @@ Tensor parallelism config and functions for splitting model into shards
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Sequence
+from typing import Sequence
 
 import torch
 import torch.distributed
 from torch import nn
 
-from tensor_parallel.config import Arg, TargetedAction
+from tensor_parallel.config import MappedActions
 from tensor_parallel.state_actions import StateAction
 
 
@@ -28,7 +28,7 @@ def apply_action(input: torch.Tensor, action: StateAction, *, rank: int, world_s
     raise Exception(f"unexpected action {action_type}; supported actions: split, scale, or custom user-defined")
 
 
-def process_input(input_actions: Dict[Arg, str], rank: int, world_size: int, *args, **kwargs):
+def process_input(input_actions: MappedActions, rank: int, world_size: int, *args, **kwargs):
     extended_kwargs = dict(kwargs)
     extended_kwargs.update(enumerate(args))
     for target, action in input_actions.items():
@@ -37,9 +37,7 @@ def process_input(input_actions: Dict[Arg, str], rank: int, world_size: int, *ar
     return args, extended_kwargs
 
 
-def process_output(
-    output, output_actions: Dict[Arg, Callable[[torch.Tensor, int], torch.Tensor]], *, rank: int, world_size: int
-):
+def process_output(output, output_actions: MappedActions, *, rank: int, world_size: int):
     if isinstance(output, torch.Tensor):
         return process_output({0: output}, output_actions, rank=rank, world_size=world_size)[0]
     if isinstance(output, Sequence):
@@ -50,14 +48,14 @@ def process_output(
     return output
 
 
-class _TensorParallelWrapper(nn.Module):
+class TensorParallelWrapper(nn.Module):
     """Wraps a single module, applies tensor parallelism actions to module inputs and outputs"""
 
     def __init__(
         self,
         module: nn.Module,
-        input_actions: TargetedAction,
-        output_actions: TargetedAction,
+        input_actions: MappedActions,
+        output_actions: MappedActions,
         *,
         rank: int,
         world_size: int,
