@@ -1,15 +1,13 @@
-import json
-import os
 import re
 from contextlib import contextmanager
 from itertools import chain
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Union
 
 import torch
 
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
 from tensor_parallel.sharding import Sharded
-from tensor_parallel.tensor_parallel import Config, TensorParallel, check_device_ids
+from tensor_parallel.tensor_parallel import Config, TensorParallel
 
 
 @contextmanager

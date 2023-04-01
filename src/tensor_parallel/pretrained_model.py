@@ -5,7 +5,6 @@ import logging
 from typing import Any, Dict, Optional, Sequence
 
 import torch
-import transformers
 from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
 

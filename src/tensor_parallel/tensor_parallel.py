@@ -2,7 +2,6 @@
 The main TensorParallel module wrapper
 """
 import logging
-import os
 import threading
 from contextlib import nullcontext
 from typing import Any, Optional, Sequence, Union

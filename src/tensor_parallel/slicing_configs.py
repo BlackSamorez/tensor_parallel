@@ -23,8 +23,7 @@ from tensor_parallel.aux_actions import (
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.config import Config
 from tensor_parallel.per_device_tensors import PerDeviceTensors
-from tensor_parallel.state_actions import Scale, Split, SplitInChunks, StateAction
-from tensor_parallel.utils import nested_map
+from tensor_parallel.state_actions import Scale, Split, SplitInChunks
 
 ConfigGetter = Callable[[PretrainedConfig, Sequence[torch.device]], Config]
 
