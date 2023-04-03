@@ -2,7 +2,6 @@
 The main TensorParallel module wrapper
 """
 import logging
-import os
 import threading
 from contextlib import nullcontext
 from typing import Any, Optional, Sequence, Union
@@ -13,8 +12,10 @@ from torch._utils import ExceptionWrapper, _get_all_device_indices, _get_device_
 from torch.cuda.amp import autocast
 from torch.nn.parallel import parallel_apply
 
+from tensor_parallel.autoconfig import get_default_config
+from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE, Config
 from tensor_parallel.cross_device_ops import broadcast_coalesced
-from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE, Config, apply_inverse_action
+from tensor_parallel.shard import make_shard
 from tensor_parallel.utils import nested_flatten, nested_pack
 
 logger = logging.getLogger(__file__)
@@ -59,7 +60,7 @@ class TensorParallel(nn.Module):
             return
 
         if tensor_parallel_config is None:
-            tensor_parallel_config = Config.get_default_config(module, self.devices)
+            tensor_parallel_config = get_default_config(module, self.devices)
             logger.info("Using automatic config: sharding individual linear/conv/emb layers")
 
         self.tensor_parallel_config = tensor_parallel_config
@@ -70,9 +71,7 @@ class TensorParallel(nn.Module):
         for rank, device in enumerate(self.devices):
             if delay_init:
                 device = torch.device("cpu")
-            self.module_shards.append(
-                tensor_parallel_config.make_shard(module, device, config_with_ops, rank=rank, world_size=world_size)
-            )
+            self.module_shards.append(make_shard(module, device, config_with_ops, rank=rank, world_size=world_size))
 
         # self-diagnostics: check if the model was sharded properly
 
@@ -160,9 +159,7 @@ class TensorParallel(nn.Module):
                         name: tensor for name, tensor in state_dict.items() if name.endswith(unsharded_name)
                     }
                     tensor_shards = dict(sorted(tensor_shards.items()))  # basically sort by shard number
-                    state_dict[module_prefix + unsharded_name] = apply_inverse_action(  # add aggregated tensor entry
-                        list(tensor_shards.values()), action, len(self.module_shards)
-                    )
+                    state_dict[module_prefix + unsharded_name] = action.undo(list(tensor_shards.values()))
                     break
             else:
                 state_dict[module_prefix + unsharded_name] = next(
@@ -261,24 +258,3 @@ def check_device_ids(device_ids: Optional[Sequence[torch.device]]) -> Sequence[t
     if device_ids is None:
         device_ids = _get_all_device_indices() if torch.cuda.is_available() else []
     return tuple(map(canonicalize_device, device_ids))
-
-
-class PerDeviceTensors:
-    """tensors located on different deviecs that will *not* be broadcasted when passed to TensorParallel.forward"""
-
-    def __init__(self, *tensors: torch.Tensor):
-        # note: this will not be broadcasted because broadcast_coalesced does not broadcast class properties
-        self.tensors = tuple(tensors)
-
-    def __getitem__(self, i: int):
-        return self.tensors[i]
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.tensors})"
-
-    @property
-    def shape(self):
-        return self.tensors[0].shape
-
-    def size(self, dim: int):
-        return self.tensors[0].size(dim)

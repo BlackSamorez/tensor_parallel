@@ -5,7 +5,8 @@ import torch
 import torch.nn as nn
 from torch.nn.modules.conv import _ConvTransposeNd
 
-from tensor_parallel import Sharded, TensorParallel
+import tensor_parallel
+from tensor_parallel import Config, Sharded, TensorParallel
 
 
 @pytest.mark.parametrize("emb_cls", [nn.Embedding, nn.EmbeddingBag])
@@ -129,3 +130,63 @@ def test_sharding(emb_cls, devices):
     torch.testing.assert_close(ref_out, out_ours, atol=1e-6, rtol=1e-05)
     our_grad = torch.cat([next(shard[0].parameters()).grad for shard in model_tp.module.module_shards], dim=1)
     torch.testing.assert_close(model[0].weight.grad, our_grad, atol=1e-6, rtol=1e-05)
+
+
+@pytest.mark.parametrize("devices", [("cpu", "cpu"), ("cpu", "cpu", "cpu")])
+def test_config_backward_compatibility(devices):
+    class Module(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.linear = nn.Linear(10, 10, bias=False)
+
+        def forward(self, x):
+            return self.linear(x)
+
+    model = Module()
+
+    modern_state_dict = TensorParallel(
+        model,
+        device_ids=devices,
+        tensor_parallel_config=Config(
+            state_rules={r".*linear.weight": tensor_parallel.state_actions.Split(world_size=len(devices), dim=0)},
+            input_rules={},
+            output_rules={},
+            attr_rules={},
+        ),
+    ).state_dict()
+
+    legacy_callable_state_dict = TensorParallel(
+        model,
+        device_ids=devices,
+        tensor_parallel_config=Config(
+            state_rules={
+                r".*linear.weight": lambda tensor, rank: torch.tensor_split(tensor, len(devices), dim=0)[rank]
+            },
+            input_rules={},
+            output_rules={},
+            attr_rules={},
+        ),
+    ).state_dict()
+
+    legacy_tuple_state_dict = TensorParallel(
+        model,
+        device_ids=devices,
+        tensor_parallel_config=Config(
+            state_rules={
+                r".*linear.weight": (
+                    lambda tensor, rank: torch.tensor_split(tensor, len(devices), dim=0)[rank],
+                    lambda tensors: torch.cat([tensor.cpu() for tensor in tensors], dim=0),
+                )
+            },
+            input_rules={},
+            output_rules={},
+            attr_rules={},
+        ),
+    ).state_dict()
+
+    for name, item in modern_state_dict.items():
+        assert name in legacy_callable_state_dict, f"{name} not in legacy_callable_state_dict"
+        torch.testing.assert_close(item, legacy_callable_state_dict[name])
+
+        assert name in legacy_tuple_state_dict, f"{name} not in legacy_tuple_state_dict"
+        torch.testing.assert_close(item, legacy_tuple_state_dict[name])

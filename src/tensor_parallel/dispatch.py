@@ -1,17 +1,13 @@
-import json
-import os
 import re
 from contextlib import contextmanager
 from itertools import chain
-from typing import Any, Dict, Optional, Sequence, Union
+from typing import Union
 
 import torch
-from accelerate import load_checkpoint_in_model
 
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
 from tensor_parallel.sharding import Sharded
-from tensor_parallel.slicer_wrapper import apply_action, find_matching_actions
-from tensor_parallel.tensor_parallel import Config, TensorParallel, check_device_ids
+from tensor_parallel.tensor_parallel import Config, TensorParallel
 
 
 @contextmanager
@@ -98,7 +94,7 @@ def convert_data(input_state_dict, output_state_dict, tensor_parallel_config: Co
     for name, state in input_state_dict.items():
         for pattern, action in tensor_parallel_config.state_rules.items():
             if pattern.search(name) is not None:
-                output_state_dict[name] = apply_action(state, action, rank=rank, world_size=world_size)
+                output_state_dict[name] = action(state, rank=rank)
                 break
         else:
             output_state_dict[name] = input_state_dict[name]  # copy source parameter as is

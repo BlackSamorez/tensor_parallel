@@ -5,20 +5,14 @@ import logging
 from typing import Any, Dict, Optional, Sequence
 
 import torch
-import transformers
 from torch import nn
 from transformers import PretrainedConfig, PreTrainedModel
 
+from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE, Config
+from tensor_parallel.per_device_tensors import PerDeviceTensors
 from tensor_parallel.sharding import Sharded
-from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE, Config
 from tensor_parallel.slicing_configs import PREDEFINED_CONFIGS
-from tensor_parallel.tensor_parallel import (
-    PerDeviceTensors,
-    TensorParallel,
-    check_device_ids,
-    parallel_apply,
-    parallel_apply_simple,
-)
+from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids, parallel_apply, parallel_apply_simple
 from tensor_parallel.utils import nested_map
 
 logger = logging.getLogger(__file__)

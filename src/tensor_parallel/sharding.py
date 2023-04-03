@@ -11,8 +11,8 @@ from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 import torch
 from torch import nn
 
+from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE
 from tensor_parallel.cross_device_ops import all_gather
-from tensor_parallel.slicer_wrapper import TENSOR_PARALLEL_USE_NATIVE
 from tensor_parallel.tensor_parallel import TensorParallel
 
 logger = logging.getLogger(__file__)
