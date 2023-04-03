@@ -53,6 +53,8 @@ def test_multipurpose_configs(model_classes, model_name):
     ],
 )
 def test_forward_gpt2_like(use_config, devices, model_name):
+    torch.manual_seed(0)
+
     model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 
     inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
@@ -83,6 +85,8 @@ def test_forward_gpt2_like(use_config, devices, model_name):
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["t5-small"])
 def test_forward_t5_like(use_config, devices, model_name):
+    torch.manual_seed(0)
+
     model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 
     enc = torch.randint(1, 1000, size=(2, 3), device=devices[0])
@@ -116,6 +120,8 @@ def test_forward_t5_like(use_config, devices, model_name):
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_forward_bert_like(use_config, devices, model_name):
+    torch.manual_seed(0)
+
     model = BertModel.from_pretrained(model_name).to(devices[0])
 
     inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
@@ -147,6 +153,8 @@ def test_forward_bert_like(use_config, devices, model_name):
 )
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 def test_generate(generate_kwargs, model_name, devices):
+    torch.manual_seed(0)
+
     def _generate_scores(model, input_ids, generate_kwargs):
         scores_tuple = model.generate(
             input_ids,
@@ -191,6 +199,8 @@ def test_generate(generate_kwargs, model_name, devices):
 @pytest.mark.parametrize("model_name", ["t5-small"])
 @pytest.mark.parametrize("sharded", [False, True])
 def test_encoder(use_predefined_config, model_name, sharded):
+    torch.manual_seed(0)
+
     devices = ["cpu"] * 2
     model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 

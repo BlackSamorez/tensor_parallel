@@ -31,6 +31,8 @@ def test_basic_attributes(emb_cls, devices):
 @pytest.mark.parametrize("emb_cls", [nn.Embedding, nn.EmbeddingBag])
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu", "cpu"), ("cpu", "cpu", "cpu")])
 def test_embeds_and_linear(emb_cls, devices):
+    torch.manual_seed(0)
+
     model = nn.Sequential(
         emb_cls(num_embeddings=1337, embedding_dim=64),
         nn.LayerNorm(64),
@@ -55,6 +57,8 @@ def test_embeds_and_linear(emb_cls, devices):
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu",) * 2, ("cpu",) * 3, ("cpu",) * 4])
 @pytest.mark.parametrize("extra_options", [{}, {"padding": "same"}, {"stride": 2}, {"dilation": 2}, {"groups": 2}])
 def test_convs(devices, extra_options):
+    torch.manual_seed(0)
+
     batchnorm_cls = (None, nn.BatchNorm1d, nn.BatchNorm2d, nn.BatchNorm3d)
     # ^-- note: batchnorms test that tensor_parallel handles buffers (non-parameter state tensors) correctly
     for Conv, nd in (
@@ -101,6 +105,8 @@ def test_convs(devices, extra_options):
 @pytest.mark.parametrize("emb_cls", [nn.Embedding, nn.EmbeddingBag])
 @pytest.mark.parametrize("devices", [None, ("cpu",), ("cpu", "cpu"), ("cpu", "cpu", "cpu")])
 def test_sharding(emb_cls, devices):
+    torch.manual_seed(0)
+
     model = nn.Sequential(
         emb_cls(num_embeddings=1337, embedding_dim=64),
         nn.LayerNorm(64),

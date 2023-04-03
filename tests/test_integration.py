@@ -12,6 +12,8 @@ from tensor_parallel.state_actions import Scale, Split
 @pytest.mark.parametrize("custom_config", [True, False])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3, ("cpu",) * 4])
 def test_tp_bloom_block(devices, custom_config):
+    torch.manual_seed(0)
+
     bloom_config = BloomConfig.from_pretrained("bigscience/bloom-560m")
     bloom_config.torch_dtype = torch.float32
     block = BloomBlock(bloom_config)
