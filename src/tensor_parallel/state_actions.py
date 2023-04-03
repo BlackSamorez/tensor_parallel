@@ -1,7 +1,7 @@
 """slicing_actions.py: file contains actions """
 
 from abc import ABC, abstractclassmethod
-from typing import Any, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 import torch
 from torch import Tensor
@@ -15,6 +15,25 @@ class StateAction(ABC):
     @abstractclassmethod
     def undo(self, tensors: Sequence[Tensor]) -> Tensor:
         pass
+
+
+class LegacyStateAction(StateAction):
+    def __init__(
+        self,
+        action: Callable[[Tensor, int], Tensor],
+        reverse_action: Optional[Callable[[Sequence[Tensor]], Tensor]] = None,
+    ):
+        self.action = action
+        self.reverse_action = reverse_action
+
+    def __call__(self, tensor: Tensor, rank: int) -> Tensor:
+        return self.action(tensor, rank)
+
+    def undo(self, tensors: Sequence[Tensor]) -> Tensor:
+        if self.reverse_action is None:
+            raise Exception(f"No reverse action provided for {self.action}. Can't undo.")
+
+        return self.reverse_action(tensors)
 
 
 class Split(StateAction):

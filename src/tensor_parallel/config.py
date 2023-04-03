@@ -1,4 +1,5 @@
 import dataclasses
+import logging
 import os
 import re
 from functools import partial
@@ -15,7 +16,9 @@ from tensor_parallel.communications import (
     NCCLAllGather,
     NCCLAllReduce,
 )
-from tensor_parallel.state_actions import StateAction
+from tensor_parallel.state_actions import LegacyStateAction, StateAction
+
+logger = logging.getLogger(__file__)
 
 Arg = Union[int, str]
 Action = Callable[[Any, int], Any]  # actions describe what to do with tensors
@@ -38,6 +41,9 @@ class Config:
     def __init__(
         self, state_rules: StateRules, input_rules: ModuleRules, output_rules: ModuleRules, attr_rules: ModuleRules
     ):
+        for pattern, state_action in state_rules.items():
+            state_rules[pattern] = convert_legacy_state_action(state_action)
+
         all_rules = [state_rules, input_rules, output_rules, attr_rules]
         for i, rule_set in enumerate(all_rules):
             all_rules[i] = dict((re.compile(pattern), actions) for pattern, actions in rule_set.items())
@@ -54,6 +60,24 @@ class Config:
             input_rules=create_collective_ops(self.input_rules, devices),
             output_rules=create_collective_ops(self.output_rules, devices),
         )
+
+
+def convert_legacy_state_action(state_action: Any) -> StateAction:
+    if isinstance(state_action, StateAction):
+        return state_action
+    if callable(state_action):
+        logger.warning(f"Using callables in state_rules is deprecated. Please use StateAction instead.")
+        return LegacyStateAction(state_action)
+    if (
+        isinstance(state_action, tuple)
+        and len(state_action) == 2
+        and callable(state_action[0])
+        and callable(state_action[1])
+    ):
+        logger.warning(f"Using tuples of callables in state_rules is deprecated. Please use StateAction instead.")
+        return LegacyStateAction(state_action[0], state_action[1])
+
+    raise Exception(f"Can't convert {state_action} of type {type(state_action)} to StateAction")
 
 
 def create_collective_ops(rules: dict, devices: Sequence[torch.device]):

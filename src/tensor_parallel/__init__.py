@@ -8,4 +8,5 @@ from tensor_parallel.dispatch import convert_state_dict, infer_sharded_device_ma
 from tensor_parallel.factory import tensor_parallel
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
 from tensor_parallel.sharding import Sharded
+from tensor_parallel.state_actions import StateAction
 from tensor_parallel.tensor_parallel import TensorParallel
