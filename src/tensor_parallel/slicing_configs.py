@@ -375,29 +375,17 @@ def get_llama_config(model_config: LlamaConfig, devices: Sequence[torch.device])
     return Config(
         state_rules={
             # LlamaAttention
-            r".*self_attn\.q_proj\.weight$": (
-                partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "split 0",
-            ),
-            r".*self_attn\.k_proj\.weight$": (
-                partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "split 0",
-            ),
-            r".*self_attn\.v_proj\.weight$": (
-                partial(split_heads, dim=0, head_dim=head_dim, world_size=world_size),
-                "split 0",
-            ),
-            r".*self_attn\.o_proj\.weight$": (
-                partial(split_heads, dim=1, head_dim=head_dim, world_size=world_size),
-                "split 1",
-            ),
+            r".*self_attn\.q_proj\.weight$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*self_attn\.k_proj\.weight$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*self_attn\.v_proj\.weight$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*self_attn\.o_proj\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
             # LlamaFeedForward
-            r".*mlp\.gate_proj\.weight$": "split 0",
-            r".*mlp\.down_proj\.weight$": "split 1",
-            r".*mlp\.up_proj\.weight$": "split 0",
+            r".*mlp\.gate_proj\.weight$": Split(world_size=world_size, dim=0),
+            r".*mlp\.down_proj\.weight$": Split(world_size=world_size, dim=1),
+            r".*mlp\.up_proj\.weight$": Split(world_size=world_size, dim=0),
             # LlamaModel
-            r".*embed_tokens.weight$": "split 1",
-            r".*lm_head\.weight$": "split 0",
+            r".*embed_tokens.weight$": Split(world_size=world_size, dim=1),
+            r".*lm_head\.weight$": Split(world_size=world_size, dim=0),
         },
         input_rules={
             r".*self_attn$": {"past_key_value": select_kv_for_rank},
