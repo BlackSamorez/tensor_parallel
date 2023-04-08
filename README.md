@@ -7,7 +7,7 @@
     🚀 &nbsp;<b><a href="https://www.kaggle.com/code/blacksamorez/tensor-parallel-int8-llm/">Try new 20B LLMs demo in Kaggle</a></b>
 </p>
 
-Run large PyTorch models on multiple GPUs in one line of code with almost linear speedup.
+Run large PyTorch models on multiple GPUs in one line of code with potentially linear speedup.
 
 ```python
 import transformers
