@@ -188,12 +188,20 @@ def test_generate(generate_kwargs, model_name, devices):
                 msg=lambda msg: f"Diverged at {'%d%s' % (i + 1,'tsnrhtdd'[((i + 1)//10%10!=1)*((i + 1)%10<4)*(i + 1)%10::4])} token: {msg}",
             )
 
-    if model_name == "t5-small":
-        model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
-    else:
-        model = (
-            transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
-        )
+    try:
+        if model_name == "t5-small":
+            model = (
+                T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+            )
+        else:
+            model = (
+                transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)
+                .float()
+                .to(devices[0])
+            )
+    except KeyError as err:
+        pytest.skip(f"Could not create model {model_name} with error {err}")
+
     input_ids = torch.randint(1, 1000, size=(2, 10), device=devices[0])
 
     scores_ref = _generate_scores(model, input_ids, generate_kwargs)
