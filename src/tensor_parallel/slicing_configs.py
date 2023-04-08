@@ -10,16 +10,7 @@ from itertools import chain
 from typing import Callable, Dict, Sequence
 
 import torch
-from transformers import (
-    BertConfig,
-    BloomConfig,
-    CodeGenConfig,
-    GPT2Config,
-    GPTNeoXConfig,
-    LlamaConfig,
-    PretrainedConfig,
-    T5Config,
-)
+from transformers import BertConfig, BloomConfig, CodeGenConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
 
 from tensor_parallel.aux_actions import (
     gather_kv,
@@ -363,7 +354,10 @@ def get_codegen_config(model_config: CodeGenConfig, devices: Sequence[torch.devi
     )
 
 
-def get_llama_config(model_config: LlamaConfig, devices: Sequence[torch.device]) -> Config:
+def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.device]) -> Config:
+    # We can't use LlamaConfig since it requires pre-release `transformers``
+    assert model_config.model_type == "llama", f"Trying to pass {model_config.model_type} as llama config"
+
     world_size = len(devices)
     num_heads = model_config.num_attention_heads
     head_dim = model_config.hidden_size // model_config.num_attention_heads
