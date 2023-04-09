@@ -3,6 +3,7 @@ from typing import Sequence
 import pytest
 import torch
 import transformers
+from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, BertModel, T5ForConditionalGeneration
 
 from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel, tensor_parallel
@@ -41,6 +42,7 @@ def test_multipurpose_configs(model_classes, model_name):
     )  # basically asserting that all of those have the same config
 
 
+@pytest.mark.parametrize("use_lora", [False, True])
 @pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize(
@@ -53,13 +55,16 @@ def test_multipurpose_configs(model_classes, model_name):
         "Bingsu/llama-190m-arch",
     ],
 )
-def test_forward_gpt2_like(use_config, devices, model_name):
+def test_forward_gpt2_like(use_lora, use_config, devices, model_name):
     torch.manual_seed(0)
 
     try:
         model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
     except KeyError as err:
         pytest.skip(f"Could not create model {model_name} with error {err}")
+    if use_lora:
+        lora_config = LoraConfig(base_model_name_or_path=model_name, lora_alpha=32, lora_dropout=0.05)
+        model = get_peft_model(model, lora_config)
 
     inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
     inp2 = torch.randint(1, 1000, size=(2, 1), device=devices[0])
@@ -85,13 +90,17 @@ def test_forward_gpt2_like(use_config, devices, model_name):
     torch.testing.assert_close(out3_ref.logits, out3.logits, atol=3e-3, rtol=1e-05)
 
 
+@pytest.mark.parametrize("use_lora", [False, True])
 @pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["t5-small"])
-def test_forward_t5_like(use_config, devices, model_name):
+def test_forward_t5_like(use_lora, use_config, devices, model_name):
     torch.manual_seed(0)
 
     model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+    if use_lora:
+        lora_config = LoraConfig(base_model_name_or_path=model_name, lora_alpha=32, lora_dropout=0.05)
+        model = get_peft_model(model, lora_config)
 
     enc = torch.randint(1, 1000, size=(2, 3), device=devices[0])
     dec1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
@@ -120,13 +129,17 @@ def test_forward_t5_like(use_config, devices, model_name):
     torch.testing.assert_close(out3_ref.logits, out3.logits, atol=3e-3, rtol=1e-05)
 
 
+@pytest.mark.parametrize("use_lora", [False, True])
 @pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
-def test_forward_bert_like(use_config, devices, model_name):
+def test_forward_bert_like(use_lora, use_config, devices, model_name):
     torch.manual_seed(0)
 
     model = BertModel.from_pretrained(model_name).to(devices[0])
+    if use_lora:
+        lora_config = LoraConfig(base_model_name_or_path=model_name, lora_alpha=32, lora_dropout=0.05)
+        model = get_peft_model(model, lora_config)
 
     inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
     inp2 = torch.randint(1, 1000, size=(2, 1), device=devices[0])
