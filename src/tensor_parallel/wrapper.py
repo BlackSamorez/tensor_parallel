@@ -44,7 +44,7 @@ def process_output(output, output_actions: MappedActions, *, rank: int, world_si
         output_dict = process_output(dict(enumerate(output)), output_actions, rank=rank, world_size=world_size)
         return type(output)((output_dict[i] for i in range(len(output))))
     for target, action in output_actions.items():
-        output[target] = action(output.get(target), rank=rank)
+        output[target] = apply_action(output.get(target), action, rank=rank, world_size=world_size)
     return output
 
 

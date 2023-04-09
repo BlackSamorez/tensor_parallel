@@ -136,8 +136,8 @@ def add_lora_rules(model: nn.Module, config: Config) -> Config:
                         if action.dim == 0:
                             lora_state_rules[re.compile(rf"^{name}.lora_B")] = action
                         elif action.dim == 1:
-                            lora_input_rules[re.compile(rf"^{name}.lora_A")] = {0: "gather -1"}
-                            lora_output_rules[re.compile(rf"^{name}.lora_A")] = {0: "scale"}
+                            lora_input_rules[re.compile(rf"^{name}.lora_A.*.")] = {0: "gather -1"}
+                            lora_output_rules[re.compile(rf"^{name}.lora_A.*.")] = {0: "scale"}
                         else:
                             raise Exception(
                                 "Expected dim in [0, 1]. Don't know what to do with LoRA linear split along dim {i}"
