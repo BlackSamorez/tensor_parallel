@@ -70,5 +70,4 @@ def get_default_config(module: nn.Module, device_ids: Sequence[torch.device]) ->
                 state_rules[f"^{name}.bias$"] = Scale(world_size=len(device_ids))
             input_rules[f"^{name}$"] = {0: SplitInsideChunks(world_size=len(device_ids), dim=1, num_chunks=groups)}
             output_rules[f"^{name}$"] = {0: "sum"}
-
     return Config(state_rules, input_rules, output_rules, {})
