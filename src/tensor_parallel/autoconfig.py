@@ -71,6 +71,4 @@ def get_default_config(module: nn.Module, device_ids: Sequence[torch.device]) ->
             input_rules[f"^{name}$"] = {0: SplitInsideChunks(world_size=len(device_ids), dim=1, num_chunks=groups)}
             output_rules[f"^{name}$"] = {0: "sum"}
 
-    state_rules[f"lora_B"] = Split(world_size=len(device_ids), dim=0)
-
     return Config(state_rules, input_rules, output_rules, {})

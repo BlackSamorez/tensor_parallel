@@ -6,6 +6,8 @@ from functools import partial
 from typing import Any, Callable, Dict, Sequence, Union
 
 import torch
+from peft.tuners.lora import LoraLayer
+from torch import nn
 
 import tensor_parallel.cross_device_ops as cross_device_ops
 from tensor_parallel.communications import (
@@ -16,7 +18,7 @@ from tensor_parallel.communications import (
     NCCLAllGather,
     NCCLAllReduce,
 )
-from tensor_parallel.state_actions import LegacyStateAction, StateAction
+from tensor_parallel.state_actions import LegacyStateAction, Split, StateAction
 
 logger = logging.getLogger(__file__)
 
@@ -120,3 +122,32 @@ def create_collective_ops(rules: dict, devices: Sequence[torch.device]):
         output_actions = {key: transform_map.get(rule, rule) for key, rule in output_actions.items()}
         initialized_output_rules[pattern] = output_actions
     return initialized_output_rules
+
+
+def add_lora_rules(model: nn.Module, config: Config) -> Config:
+    lora_state_rules = {}
+    lora_input_rules = {}
+    lora_output_rules = {}
+    for name, module in model.named_modules():
+        if isinstance(module, LoraLayer):
+            for pattern, action in config.state_rules.items():
+                if pattern.search(name + ".weight") is not None:
+                    if isinstance(action, Split):
+                        if action.dim == 0:
+                            lora_state_rules[re.compile(rf"^{name}.lora_B")] = action
+                        elif action.dim == 1:
+                            lora_input_rules[re.compile(rf"^{name}.lora_A")] = {0: "gather -1"}
+                            lora_output_rules[re.compile(rf"^{name}.lora_A")] = {0: "scale"}
+                        else:
+                            raise Exception(
+                                "Expected dim in [0, 1]. Don't know what to do with LoRA linear split along dim {i}"
+                            )
+                    else:
+                        raise Exception(
+                            f"Can't apply action {action} since it uses LoRA. The only actions with LoRA support are Split and it's variations."
+                        )
+
+    config.state_rules.update(lora_state_rules)
+    config.input_rules.update(lora_input_rules)
+    config.output_rules.update(lora_output_rules)
+    return config

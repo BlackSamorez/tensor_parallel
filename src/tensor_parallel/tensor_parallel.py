@@ -13,7 +13,7 @@ from torch.cuda.amp import autocast
 from torch.nn.parallel import parallel_apply
 
 from tensor_parallel.autoconfig import get_default_config
-from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE, Config
+from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE, Config, add_lora_rules
 from tensor_parallel.cross_device_ops import broadcast_coalesced
 from tensor_parallel.shard import make_shard
 from tensor_parallel.utils import nested_flatten, nested_pack
@@ -63,6 +63,7 @@ class TensorParallel(nn.Module):
             tensor_parallel_config = get_default_config(module, self.devices)
             logger.info("Using automatic config: sharding individual linear/conv/emb layers")
 
+        tensor_parallel_config = add_lora_rules(module, tensor_parallel_config)
         self.tensor_parallel_config = tensor_parallel_config
 
         config_with_ops = tensor_parallel_config.create_collective_ops(self.devices)
