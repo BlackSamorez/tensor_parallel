@@ -50,12 +50,16 @@ def test_multipurpose_configs(model_classes, model_name):
         "gpt2",
         "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
         "Salesforce/codegen-350M-mono",
+        "decapoda-research/llama-7b-hf",
     ],
 )
 def test_forward_gpt2_like(use_config, devices, model_name):
     torch.manual_seed(0)
 
-    model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+    try:
+        model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+    except KeyError as err:
+        pytest.skip(f"Could not create model {model_name} with error {err}")
 
     inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
     inp2 = torch.randint(1, 1000, size=(2, 1), device=devices[0])
@@ -149,7 +153,14 @@ def test_forward_bert_like(use_config, devices, model_name):
 
 @pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {}, {"top_p": 0.5}])
 @pytest.mark.parametrize(
-    "model_name", ["t5-small", "bigscience/bloom-560m", "gpt2", "trl-internal-testing/tiny-random-GPTNeoXForCausalLM"]
+    "model_name",
+    [
+        "t5-small",
+        "bigscience/bloom-560m",
+        "gpt2",
+        "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
+        "decapoda-research/llama-7b-hf",
+    ],
 )
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 def test_generate(generate_kwargs, model_name, devices):
@@ -177,12 +188,20 @@ def test_generate(generate_kwargs, model_name, devices):
                 msg=lambda msg: f"Diverged at {'%d%s' % (i + 1,'tsnrhtdd'[((i + 1)//10%10!=1)*((i + 1)%10<4)*(i + 1)%10::4])} token: {msg}",
             )
 
-    if model_name == "t5-small":
-        model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
-    else:
-        model = (
-            transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
-        )
+    try:
+        if model_name == "t5-small":
+            model = (
+                T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+            )
+        else:
+            model = (
+                transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)
+                .float()
+                .to(devices[0])
+            )
+    except KeyError as err:
+        pytest.skip(f"Could not create model {model_name} with error {err}")
+
     input_ids = torch.randint(1, 1000, size=(2, 10), device=devices[0])
 
     scores_ref = _generate_scores(model, input_ids, generate_kwargs)
