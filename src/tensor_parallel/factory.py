@@ -8,6 +8,7 @@ from transformers import PreTrainedModel
 
 from tensor_parallel.config import Config
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
+from tensor_parallel.shard import make_distributed_shard
 from tensor_parallel.sharding import Sharded
 from tensor_parallel.tensor_parallel import TensorParallel
 
@@ -56,7 +57,7 @@ def tensor_parallel(
         assert len(device_ids) == 1, "if distributed=True, please specify a single (current) device"
         assert not sharded, "distributed + sharded mode is not implemented, please keep one"
 
-        return tensor_parallel_config.make_distributed_shard(module, device=torch.device(device_ids[0]), **kwargs)
+        return make_distributed_shard(module, device=torch.device(device_ids[0]), **kwargs)
     else:
         if isinstance(module, PreTrainedModel):
             module = TensorParallelPreTrainedModel(
