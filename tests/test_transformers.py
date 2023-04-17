@@ -50,7 +50,7 @@ def test_multipurpose_configs(model_classes, model_name):
         "gpt2",
         "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
         "Salesforce/codegen-350M-mono",
-        "decapoda-research/llama-7b-hf",
+        "Bingsu/llama-190m-arch",
     ],
 )
 def test_forward_gpt2_like(use_config, devices, model_name):
@@ -159,7 +159,7 @@ def test_forward_bert_like(use_config, devices, model_name):
         "bigscience/bloom-560m",
         "gpt2",
         "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
-        "decapoda-research/llama-7b-hf",
+        "Bingsu/llama-190m-arch",
     ],
 )
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])

@@ -65,7 +65,7 @@ def make_shard(module: nn.Module, device: torch.device, config: Config, *, rank:
     return unique_wrappers.get(shard, shard)  # wrap the root module if needed
 
 
-def make_distributed_shard(config: Optional[Config], module: nn.Module, device: torch.device):
+def make_distributed_shard(module: nn.Module, device: torch.device, config: Optional[Config] = None):
     if config is None:
         config = get_default_config(module, device_ids=range(torch.distributed.get_world_size()))
         logger.info("Using automatic config: sharding individual linear/conv/emb layers")

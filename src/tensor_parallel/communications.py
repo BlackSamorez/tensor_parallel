@@ -172,8 +172,12 @@ class AllGather(CollectiveOpetationBase):
 
 
 class DistributedAllReduce(CollectiveOpetationBase):
+    def __init__(self, world_size: int):
+        pass
+
     def __call__(self, x: torch.Tensor, rank: int):
         all_reduce(x)
+        return x
 
 
 class DistributedAllGather(CollectiveOpetationBase):
