@@ -159,7 +159,7 @@ def test_forward_bert_like(use_config, devices, model_name):
         "bigscience/bloom-560m",
         "gpt2",
         "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
-        "decapoda-research/llama-7b-hf",
+        "Bingsu/llama-190m-arch",
     ],
 )
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
