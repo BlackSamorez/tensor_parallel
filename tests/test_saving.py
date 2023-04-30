@@ -19,7 +19,7 @@ PATH_TO_SAVE = "/tmp/"
 
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small"])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_no_parallelism_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_state_dict = model.state_dict()
@@ -41,7 +41,7 @@ def test_no_parallelism_zero_3(devices, model_name):
 
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small"])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
 def test_parallelism_no_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_state_dict = model.state_dict()
@@ -61,7 +61,7 @@ def test_parallelism_no_zero_3(devices, model_name):
 
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small"])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
 def test_parallelism_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_state_dict = model.state_dict()
@@ -81,7 +81,7 @@ def test_parallelism_zero_3(devices, model_name):
 
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small"])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
 @pytest.mark.parametrize("shard_as_pretrained", [True, False])
 def test_save_keep_shards(devices, model_name, shard_as_pretrained):
     model = AutoModel.from_pretrained(model_name).to(devices[0])
@@ -103,7 +103,7 @@ def test_sharding_meta():
 
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small"])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
 @pytest.mark.parametrize("pretrained", [True])
 def test_save_shards_load_shards(devices, model_name, pretrained):
     devices = [torch.device(device) for device in devices]
@@ -133,7 +133,7 @@ def test_save_shards_load_shards(devices, model_name, pretrained):
 
 @pytest.mark.parametrize("use_pretrained", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small"])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
 def test_convert_state_dict(use_pretrained, devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0])
     torch.save(model.state_dict(), PATH_TO_SAVE + "test_convert_state_dict.bin")

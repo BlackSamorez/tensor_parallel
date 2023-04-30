@@ -109,8 +109,8 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
             # T5DenseActDense
             r".*DenseReluDense\.wo\.weight$": Split(world_size=world_size, dim=1),
             # T5Model
-            r".*embed_tokens.weight$": Split(world_size=world_size, dim=1),
-            r".*shared.weight$": Split(world_size=world_size, dim=1),
+            r".*embed_tokens\.weight$": Split(world_size=world_size, dim=1),
+            r".*shared\.weight$": Split(world_size=world_size, dim=1),
             r".*lm_head\.weight$": Split(world_size=world_size, dim=1),
             # note: ^-- lm_head.weight tied with word embeddings
         },
@@ -123,6 +123,7 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
             r".*SelfAttention$": {0: "sum", 1: gather_kv_across_ranks},
             r".*DenseReluDense$": {0: "sum"},
             r".*shared$": {0: "gather -1"},
+            r".*embed_tokens$": {0: "gather -1"},
             r".*lm_head$": {0: "sum"},
         },
         attr_rules={
