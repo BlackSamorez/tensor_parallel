@@ -57,11 +57,6 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
             module, device_ids, output_device, output_device_index, tensor_parallel_config
         )
 
-        self.encoder_shards = nn.ModuleList()
-        if module.config.is_encoder_decoder:
-            for encoder_decoder_shard in self.wrapped_model.module_shards:
-                self.encoder_shards.append(encoder_decoder_shard.get_encoder())
-
     @property
     def devices(self):
         return self.wrapped_model.devices
@@ -118,6 +113,10 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
         if len(self.wrapped_model.module_shards) == 1:
             return self.wrapped_model.module_shards[0].get_encoder()
 
+        encoder_shards = [
+            encoder_decoder_shard.get_encoder() for encoder_decoder_shard in self.wrapped_model.module_shards
+        ]
+
         encoder_wrapper_class = None
         if isinstance(self.wrapped_model, TensorParallel):
 
@@ -133,14 +132,14 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
                     ) = self.wrapped_pretrained_model.wrapped_model.prepare_args_kwargs_for_forward(*args, **kwargs)
                     if self.wrapped_pretrained_model.wrapped_model.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
                         return parallel_apply(
-                            self.wrapped_pretrained_model.encoder_shards,
+                            encoder_shards,
                             inputs,
                             kwargs_tup,
                             self.wrapped_pretrained_model.wrapped_model.devices,
                         )[self.wrapped_pretrained_model.wrapped_model.output_device_index]
                     else:
                         return parallel_apply_simple(
-                            self.wrapped_pretrained_model.encoder_shards,
+                            encoder_shards,
                             inputs,
                             kwargs_tup,
                             self.wrapped_pretrained_model.wrapped_model.devices,
@@ -169,14 +168,14 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
                     )
                     if self.wrapped_pretrained_model.wrapped_model.module.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
                         return parallel_apply(
-                            self.wrapped_pretrained_model.encoder_shards,
+                            encoder_shards,
                             inputs,
                             kwargs_tup,
                             self.wrapped_pretrained_model.wrapped_model.module.devices,
                         )[self.wrapped_pretrained_model.wrapped_model.module.output_device_index]
                     else:
                         return parallel_apply_simple(
-                            self.wrapped_pretrained_model.encoder_shards,
+                            encoder_shards,
                             inputs,
                             kwargs_tup,
                             self.wrapped_pretrained_model.wrapped_model.module.devices,
