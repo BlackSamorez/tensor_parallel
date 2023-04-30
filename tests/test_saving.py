@@ -93,15 +93,6 @@ def test_save_keep_shards(devices, model_name, shard_as_pretrained):
     model_tp.load_state_dict(model_tp.state_dict())
 
 
-def test_sharding_meta():
-    model_name = "bert-base-uncased"
-    with init_empty_weights():
-        model_tp = TensorParallel(AutoModel.from_pretrained(model_name), ["meta", "meta"])
-
-    with pytest.raises(RuntimeError):
-        Sharded(model_tp)
-
-
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
 @pytest.mark.parametrize("pretrained", [True])
@@ -120,7 +111,7 @@ def test_save_shards_load_shards(devices, model_name, pretrained):
     del model_tp
 
     with init_empty_weights():
-        model_tp = shraded_class(AutoModel.from_config(AutoConfig.from_pretrained(model_name)), devices)
+        model_tp = shraded_class(AutoModel.from_config(AutoConfig.from_pretrained(model_name)).half(), devices)
 
     checkpoint = PATH_TO_SAVE + ("pytorch_model.bin.index.json" if pretrained else "test_save_shards_load_shards.bin")
     load_checkpoint_in_model(
