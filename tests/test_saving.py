@@ -21,7 +21,7 @@ PATH_TO_SAVE = "/tmp/"
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_no_parallelism_zero_3(devices, model_name):
-    model = AutoModel.from_pretrained(model_name).to(devices[0])
+    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     model_state_dict = model.state_dict()
     model_tp = Sharded(
         TensorParallel(model, devices, tensor_parallel_config=Config({}, {}, {}, {}))
@@ -43,7 +43,7 @@ def test_no_parallelism_zero_3(devices, model_name):
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
 def test_parallelism_no_zero_3(devices, model_name):
-    model = AutoModel.from_pretrained(model_name).to(devices[0])
+    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     model_state_dict = model.state_dict()
     model_tp = TensorParallelPreTrainedModel(model, devices)
     with save_tensor_parallel(model_tp):
@@ -63,7 +63,7 @@ def test_parallelism_no_zero_3(devices, model_name):
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
 def test_parallelism_zero_3(devices, model_name):
-    model = AutoModel.from_pretrained(model_name).to(devices[0])
+    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     model_state_dict = model.state_dict()
     model_tp = tensor_parallel(model, devices, sharded=True)
     with save_tensor_parallel(model_tp):
@@ -84,7 +84,7 @@ def test_parallelism_zero_3(devices, model_name):
 @pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
 @pytest.mark.parametrize("shard_as_pretrained", [True, False])
 def test_save_keep_shards(devices, model_name, shard_as_pretrained):
-    model = AutoModel.from_pretrained(model_name).to(devices[0])
+    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     if shard_as_pretrained:
         model_tp = TensorParallelPreTrainedModel(model, devices)
     else:
@@ -108,7 +108,7 @@ def test_sharding_meta():
 def test_save_shards_load_shards(devices, model_name, pretrained):
     devices = [torch.device(device) for device in devices]
 
-    model = AutoModel.from_pretrained(model_name).to(devices[0])
+    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     shraded_class = TensorParallelPreTrainedModel if pretrained else TensorParallel
     model_tp = shraded_class(model, devices)
 
@@ -135,7 +135,7 @@ def test_save_shards_load_shards(devices, model_name, pretrained):
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
 def test_convert_state_dict(use_pretrained, devices, model_name):
-    model = AutoModel.from_pretrained(model_name).to(devices[0])
+    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     torch.save(model.state_dict(), PATH_TO_SAVE + "test_convert_state_dict.bin")
 
     if use_pretrained:
