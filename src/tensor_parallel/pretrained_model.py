@@ -1,6 +1,7 @@
 """
 The TensorParallel module wrapper for Hugging Face PreTrainedModel
 """
+from functools import cache
 import logging
 from typing import Any, Dict, Optional, Sequence
 
@@ -108,6 +109,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
                 beam_idx.to(self.wrapped_model.devices[i]),
             )
 
+    @cache
     def get_encoder(self):
         assert len(self.wrapped_model.module_shards), "Can't get encoder since no module shards present"
         if len(self.wrapped_model.module_shards) == 1:

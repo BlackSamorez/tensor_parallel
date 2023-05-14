@@ -265,8 +265,11 @@ def test_encoder(use_predefined_config, model_name, sharded):
     devices = ["cpu"] * 2
     model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 
-    input = torch.randint(1, 1000, size=(2, 3), device=devices[0])
-    out_ref = model.get_encoder()(input)
+    inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
+    inp2 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
+
+    out1_ref = model.get_encoder()(inp1)
+    out2_ref = model.get_encoder()(inp2)
 
     if not use_predefined_config:
         model.config.architectures = ["Pretend we don't know this architecture"]
@@ -274,5 +277,8 @@ def test_encoder(use_predefined_config, model_name, sharded):
     assert isinstance(model_tp, TensorParallelPreTrainedModel)
     del model
 
-    out = model_tp.get_encoder()(input)
-    torch.testing.assert_close(out_ref, out, atol=3e-3, rtol=1e-05)
+    out1 = model_tp.get_encoder()(inp1)
+    out2 = model_tp.get_encoder()(inp2)
+
+    torch.testing.assert_close(out1_ref, out1, atol=3e-3, rtol=1e-05)
+    torch.testing.assert_close(out2_ref, out2, atol=3e-3, rtol=1e-05)
