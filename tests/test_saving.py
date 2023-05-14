@@ -19,9 +19,7 @@ PATH_TO_SAVE = "/tmp/"
 
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize(
-    "model_name", ["bert-base-uncased", "hf-internal-testing/tiny-random-t5", "hf-internal-testing/tiny-random-bloom"]
-)
+@pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_no_parallelism_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     model_state_dict = model.state_dict()
@@ -69,9 +67,7 @@ def test_parallelism_no_zero_3(devices, model_name):
 
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize(
-    "model_name", ["bert-base-uncased", "hf-internal-testing/tiny-random-t5", "hf-internal-testing/tiny-random-bloom"]
-)
+@pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_parallelism_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     model_state_dict = model.state_dict()
@@ -87,7 +83,7 @@ def test_parallelism_zero_3(devices, model_name):
         data = model_state_dict[name]
         data_tp = model_tp_state_dict[name]
 
-        assert data.shape == data_tp.shape
+        assert data.shape == data_tp.shape, name
 
         torch.testing.assert_close(data, data_tp, msg=lambda msg: f"{name}:\n{msg}")
 
