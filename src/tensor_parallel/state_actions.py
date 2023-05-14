@@ -63,15 +63,13 @@ class Scale(StateAction):
         return tensors[0] * self.world_size
 
 
-class SplitInChunks(StateAction):
+class SplitInChunks(Split):
     """AAABBBCCCDDDEEE -> (world_size = 3, chunk_size = 3) -> [AAABBB, CCCDDD, EEE]
     Split retaining whole chunks
     """
 
     def __init__(self, world_size: int, dim: int, chunk_size: int, optional: bool = False):
-        super().__init__()
-        self.world_size = world_size
-        self.dim = dim
+        super().__init__(world_size, dim)
         self.chunk_size = chunk_size
         self.optional = optional
 
@@ -92,13 +90,11 @@ class SplitInChunks(StateAction):
         return torch.cat([tensor.cpu() for tensor in tensors], dim=self.dim)
 
 
-class SplitInsideChunks(StateAction):
+class SplitInsideChunks(Split):
     """AAABBBCCCDDDEEE -> (world_size = 3, num_chunks = 5) -> [ABCDE, ABCDE, ABCDE]"""
 
     def __init__(self, world_size: int, dim: int, num_chunks: int) -> None:
-        super().__init__()
-        self.world_size = world_size
-        self.dim = dim
+        super().__init__(world_size, dim)
         self.num_chunks = num_chunks
 
     def __call__(self, tensor: Tensor, rank: int) -> Tensor:

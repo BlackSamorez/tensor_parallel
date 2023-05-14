@@ -24,7 +24,7 @@ def get_default_config(module: nn.Module, device_ids: Sequence[torch.device]) ->
             if hasattr(module, "bias"):
                 state_rules[f"^{name}.bias$"] = Split(world_size=len(device_ids), dim=0)
             output_rules[f"^{name}$"] = {0: "gather -1"}
-        elif isinstance(module, nn.Linear):
+        elif isinstance(module, nn.Linear) and "lora_A" not in name and "lora_B" not in name:
             assert module.weight.shape == (module.out_features, module.in_features)
             assert module.bias is None or module.bias.shape == (module.out_features,)
             if module.weight not in emb_weights:  # regular linear layer
