@@ -2,7 +2,7 @@
 The TensorParallel module wrapper for Hugging Face PreTrainedModel
 """
 import logging
-from functools import cache
+from functools import lru_cache
 from typing import Any, Dict, Optional, Sequence
 
 import torch
@@ -109,7 +109,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
                 beam_idx.to(self.wrapped_model.devices[i]),
             )
 
-    @cache
+    @lru_cache(maxsize=None)
     def get_encoder(self):
         assert len(self.wrapped_model.module_shards), "Can't get encoder since no module shards present"
         if len(self.wrapped_model.module_shards) == 1:
