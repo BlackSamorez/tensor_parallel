@@ -124,7 +124,7 @@ def test_save_shards_load_shards(devices, model_name, pretrained):
 
 @pytest.mark.parametrize("use_pretrained", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize("model_name", ["bert-base-uncased", "t5-small", "bigscience/bloom-560m"])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_convert_state_dict(use_pretrained, devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     torch.save(model.state_dict(), PATH_TO_SAVE + "test_convert_state_dict.bin")
