@@ -75,6 +75,7 @@ def convert_state_dict(
     input_state_dict, tensor_parallel_config: Config, world_size: int, for_pretrained: bool = False
 ) -> dict:
     """Creates a state_dict to be loaded into a tensor parallel model from a state_dict of a base model.
+    WARNING: this function doesn't properly work with tied weights. You'll probably need to fix the resulting state_dict by hand.
 
     Args:
         input_state_dict (_type_): state_dict to be converted
