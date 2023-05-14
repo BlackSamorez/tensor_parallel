@@ -8,6 +8,7 @@ import torch
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
 from tensor_parallel.sharding import Sharded
 from tensor_parallel.tensor_parallel import Config, TensorParallel
+from tensor_parallel.utils import find_tied_weight_aliases
 
 
 @contextmanager
@@ -55,11 +56,18 @@ def infer_sharded_device_map(tp_model: Union[TensorParallel, TensorParallelPreTr
     Returns:
         dict: parameter device mapping
     """
+    id_to_device = {}
+    for name, param in tp_model.named_parameters():
+        id_to_device[id(param)] = tp_model.devices[infer_sharded_data_device_id(name)]
+    for name, buffer in tp_model.named_buffers():
+        id_to_device[id(buffer)] = tp_model.devices[infer_sharded_data_device_id(name)]
+    id_to_aliases = find_tied_weight_aliases(tp_model)
+
     device_map = {}
-    for name, _ in tp_model.named_parameters():
-        device_map[name] = tp_model.devices[infer_sharded_data_device_id(name)]
-    for name, _ in tp_model.named_buffers():
-        device_map[name] = tp_model.devices[infer_sharded_data_device_id(name)]
+    for idx, aliases in id_to_aliases.items():
+        for alias in aliases:
+            device_map[alias] = id_to_device[idx]
+
     return device_map
 
 
@@ -67,6 +75,7 @@ def convert_state_dict(
     input_state_dict, tensor_parallel_config: Config, world_size: int, for_pretrained: bool = False
 ) -> dict:
     """Creates a state_dict to be loaded into a tensor parallel model from a state_dict of a base model.
+    WARNING: this function doesn't properly work with tied weights. You'll probably need to fix the resulting state_dict by hand.
 
     Args:
         input_state_dict (_type_): state_dict to be converted

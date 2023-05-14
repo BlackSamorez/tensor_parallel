@@ -3,6 +3,10 @@ Utility functions that help you process nested dicts, tuples, lists and namedtup
 Based on: https://stackoverflow.com/questions/49739102/python-nested-dictionary-comparison
 """
 
+from itertools import chain
+from typing import Mapping, Optional, Sequence
+
+from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 
 
@@ -97,3 +101,25 @@ def nested_map(fn, *t):
     # Map.
     flat = map(nested_flatten, t)
     return nested_pack(map(fn, *flat), t[0])
+
+
+def find_tied_weight_aliases(
+    module: nn.Module, destination: Optional[Mapping[int, Sequence[str]]] = None, prefix: Optional[str] = None
+) -> Mapping[int, Sequence[str]]:
+    if prefix is None:
+        prefix = ""
+    if destination is None:
+        destination = {}
+
+    for name, param in chain(module._parameters.items(), module._buffers.items()):
+        if param is not None:
+            if id(param) in destination:
+                destination[id(param)].append(prefix + name)
+            else:
+                destination[id(param)] = [prefix + name]
+
+    for name, submodule in module._modules.items():
+        if submodule is not None:
+            find_tied_weight_aliases(module=submodule, destination=destination, prefix=prefix + name + ".")
+
+    return destination
