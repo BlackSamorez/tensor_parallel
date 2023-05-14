@@ -1,8 +1,8 @@
 """
 The TensorParallel module wrapper for Hugging Face PreTrainedModel
 """
-from functools import cache
 import logging
+from functools import cache
 from typing import Any, Dict, Optional, Sequence
 
 import torch
