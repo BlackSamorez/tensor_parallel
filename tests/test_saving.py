@@ -26,8 +26,10 @@ def test_no_parallelism_zero_3(devices, model_name):
     model_tp = Sharded(
         TensorParallel(model, devices, tensor_parallel_config=Config({}, {}, {}, {}))
     )  # zero-3 sharding only
+    del model
     with save_tensor_parallel(model_tp):
         model_tp_state_dict = model_tp.state_dict()
+    del model_tp
 
     assert sorted(list(model_state_dict.keys())) == sorted(list(model_tp_state_dict.keys()))
 
@@ -46,8 +48,10 @@ def test_parallelism_no_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     model_state_dict = model.state_dict()
     model_tp = TensorParallelPreTrainedModel(model, devices)
+    del model
     with save_tensor_parallel(model_tp):
         model_tp_state_dict = model_tp.state_dict()
+    del model_tp
 
     assert sorted(list(model_state_dict.keys())) == sorted(list(model_tp_state_dict.keys()))
 
@@ -66,8 +70,10 @@ def test_parallelism_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     model_state_dict = model.state_dict()
     model_tp = tensor_parallel(model, devices, sharded=True)
+    del model
     with save_tensor_parallel(model_tp):
         model_tp_state_dict = model_tp.state_dict()
+    del model_tp
 
     assert sorted(list(model_state_dict.keys())) == sorted(list(model_tp_state_dict.keys()))
 
