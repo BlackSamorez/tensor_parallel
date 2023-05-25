@@ -88,13 +88,13 @@ Normally, to normally create and dispatch a `tensor_parallel` model, one needs t
 It's possible to convert a `state_dict` of a basic model into the corresponding `tensor_parallel` `state_dict` using a helper function `convert_state_dict`. The state dict can then be dispatched and loaded into the model:
 
 ```python
+import accelerate
 import transformers
+
 import tensor_parallel as tp
 
-from accelerate import init_empty_weights, load_checkpoint_in_model
-
 # Initialize a weightless tensor_parallel model from MyModel
-with init_empty_weights():
+with accelerate.init_empty_weights():
     model = tp.TensorParallel(
         MyModel(),
         device_ids=[0, 1] # and prepare it to be put on GPUs 0 and 1
@@ -110,8 +110,14 @@ tensor_parallel_state_dict = tp.convert_state_dict(
     world_size=len(model.devices),
 )
 
-# Dispatch the partial state_dict
-model.load_state_dict(tensor_parallel_state_dict)
+# Dispatch the partial state_dict (load_state_dict doesn't work with meta so here I use accelerate)
+device_map = tp.infer_sharded_device_map(model)
+for param_name, param in state_dict.items():
+  module_name = param_name
+  while len(module_name) > 0 and module_name not in device_map:
+      module_name = ".".join(module_name.split(".")[:-1])
+  param_device = device_map[module_name]
+  accelerate.utils.set_module_tensor_to_device(model, param_name, param_device, value=param)
 ```
 
 With this no more than one part of the model needs to be loaded into memory at once. 
