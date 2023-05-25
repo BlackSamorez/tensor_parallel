@@ -104,7 +104,7 @@ with init_empty_weights():
 state_dict = torch.load("my_model_part_1_of_5.bin")
 
 # Convert it into a tensor_parallel state_dict
-tensor_parallel_state_dict = tp.tensor_parallel(
+tensor_parallel_state_dict = tp.convert_state_dict(
     state_dict,
     tensor_parallel_config=model.tensor_parallel_config,
     world_size=len(model.devices),
