@@ -23,7 +23,7 @@ from tensor_parallel.aux_actions import (
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.config import Config
 from tensor_parallel.per_device_tensors import PerDeviceTensors
-from tensor_parallel.state_actions import Scale, Split, SplitInChunks
+from tensor_parallel.state_actions import Scale, Split, SplitInChunks, SplitInsideChunks
 
 ConfigGetter = Callable[[PretrainedConfig, Sequence[torch.device]], Config]
 
@@ -185,28 +185,11 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
         world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
     )  # this operation ensures that we get attention cache for all heads on each device
 
-    class SplitGPT2QKV(SplitInChunks):
-        def __call__(self, tensor: torch.Tensor, rank: int) -> torch.Tensor:
-            assert tensor.shape[self.dim] % 3 == 0
-            dims = list(tensor.shape)
-            dims.insert(-1, 3)
-            dims[-1] //= 3
-
-            some_tensor = tensor.view(*dims)
-            new_tensor = torch.cat(
-                [
-                    split_heads(some_tensor[..., i, :], dim=-1, head_dim=head_dim, rank=rank, world_size=world_size)
-                    for i in range(3)
-                ],
-                dim=-1,
-            )
-            return new_tensor
-
     return Config(
         state_rules={
             # GPT2Attention
-            r".*c_attn\.weight$": SplitGPT2QKV(world_size=world_size, dim=1, chunk_size=head_dim),
-            r".*c_attn\.bias$": SplitGPT2QKV(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*c_attn\.weight$": SplitInsideChunks(world_size=world_size, dim=1, num_chunks=3),
+            r".*c_attn\.bias$": SplitInsideChunks(world_size=world_size, dim=0, num_chunks=3),
             r".*q_attn\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
             r".*q_attn\.bias$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
             r".*attn\.c_proj\.weight$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
