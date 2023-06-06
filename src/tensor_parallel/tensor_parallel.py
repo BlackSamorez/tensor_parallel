@@ -136,12 +136,21 @@ class TensorParallel(nn.Module):
         if self.preserve_shards_when_saving:
             return state_dict
 
+        for i in range(len(self.module_shards)):
+            sanity_check_param_name = next(
+                name for name, _ in state_dict.items() if name.endswith(f"_sanity_check_params.{i}")
+            )
+            del state_dict[sanity_check_param_name]
+
         # fix names for zero-3'ed params that were inside _TensorParallelWrapper
         names_inside_tp_wrapper = [name for name in state_dict.keys() if "tp_wrapped_module." in name]
         for name in names_inside_tp_wrapper:
             state_dict[name.replace("tp_wrapped_module.", "")] = state_dict.pop(name)
 
-        shards_prefix = next(name for name, _ in state_dict.items() if "module_shards." in name)
+        try:
+            shards_prefix = next(name for name, _ in state_dict.items() if "module_shards." in name)
+        except StopIteration:
+            return state_dict  # no parameters are actually tensor parallel
         shards_prefix = shards_prefix[: shards_prefix.find("module_shards.") + len("module_shards.")]
         module_prefix = shards_prefix[: -len("module_shards.")]
 
@@ -170,12 +179,6 @@ class TensorParallel(nn.Module):
                 # delete sharded tensor entries
                 for i in range(len(self.module_shards)):
                     del state_dict[f"{shards_prefix}{i}.{unsharded_name}"]
-
-        for i in range(len(self.module_shards)):
-            sanity_check_param_name = next(
-                name for name, _ in state_dict.items() if name.endswith(f"_sanity_check_params.{i}")
-            )
-            del state_dict[sanity_check_param_name]
 
         return state_dict
 

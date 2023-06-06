@@ -51,7 +51,8 @@ def get_bloom_config(model_config: BloomConfig, devices: Sequence[torch.device])
             r".*mlp\.dense_4h_to_h\.weight$": Split(world_size=world_size, dim=1),
             r".*mlp\.dense_4h_to_h\.bias$": Scale(world_size=world_size),
             # BloomModel
-            r".*word_embeddings.weight$": Split(world_size=world_size, dim=1),
+            r".*word_embeddings\.weight$": Split(world_size=world_size, dim=1),
+            r".*lm_head\.weight$": Split(world_size=world_size, dim=1),
             # note: ^-- lm_head.weight is tied with word_embeddings
         },
         input_rules={
@@ -108,7 +109,8 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
             # T5DenseActDense
             r".*DenseReluDense\.wo\.weight$": Split(world_size=world_size, dim=1),
             # T5Model
-            r".*shared.weight$": Split(world_size=world_size, dim=1),
+            r".*embed_tokens\.weight$": Split(world_size=world_size, dim=1),
+            r".*shared\.weight$": Split(world_size=world_size, dim=1),
             r".*lm_head\.weight$": Split(world_size=world_size, dim=1),
             # note: ^-- lm_head.weight tied with word embeddings
         },
@@ -121,6 +123,7 @@ def get_t5_config(model_config: T5Config, devices: Sequence[torch.device]) -> Co
             r".*SelfAttention$": {0: "sum", 1: gather_kv_across_ranks},
             r".*DenseReluDense$": {0: "sum"},
             r".*shared$": {0: "gather -1"},
+            r".*embed_tokens$": {0: "gather -1"},
             r".*lm_head$": {0: "sum"},
         },
         attr_rules={
@@ -199,6 +202,7 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
             # GPT2Model
             r".*wte\.weight$": Split(world_size=world_size, dim=1),
             r".*wpe\.weight$": Split(world_size=world_size, dim=1),
+            r".*lm_head\.weight$": Split(world_size=world_size, dim=1),
             # GPT2LMHeadModel
             # note: ^-- lm_head.weight is tied with word_embeddings
         },
