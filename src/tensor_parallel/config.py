@@ -6,7 +6,6 @@ from functools import partial
 from typing import Any, Callable, Dict, Sequence, Union
 
 import torch
-from peft.tuners.lora import LoraLayer
 from torch import nn
 
 import tensor_parallel.cross_device_ops as cross_device_ops
@@ -19,6 +18,7 @@ from tensor_parallel.communications import (
     NCCLAllReduce,
 )
 from tensor_parallel.state_actions import LegacyStateAction, Split, StateAction
+from tensor_parallel.utils import check_lora
 
 logger = logging.getLogger(__file__)
 
@@ -129,7 +129,7 @@ def add_lora_rules(model: nn.Module, config: Config) -> Config:
     lora_input_rules = {}
     lora_output_rules = {}
     for name, module in model.named_modules():
-        if isinstance(module, LoraLayer):
+        if check_lora(module=module):
             for pattern, action in config.state_rules.items():
                 if pattern.search(name + ".weight") is not None:
                     if isinstance(action, Split):
