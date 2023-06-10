@@ -129,13 +129,17 @@ def find_tied_weight_aliases(
 
 
 def check_lora(module: nn.Module) -> bool:
+    """Checks if module is lora Linear from a correct version of PEFT
+
+    Args:
+        module (nn.Module): module to check
+
+    Returns:
+        bool: result
+    """
     definition_module = getmodule(module)
-    if (
-        definition_module is not None
-        and definition_module.__name__ == "peft.tuners.lora"
-        and type(module).__name__ == "Linear"
-    ):
+    if definition_module is not None and definition_module.__name__ == "peft.tuners.lora":
         verify_peft_version()
-        return True
+        return type(module).__name__ == "Linear"
     else:
         return False
