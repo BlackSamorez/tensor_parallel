@@ -3,11 +3,14 @@ Utility functions that help you process nested dicts, tuples, lists and namedtup
 Based on: https://stackoverflow.com/questions/49739102/python-nested-dictionary-comparison
 """
 
+from inspect import getmodule
 from itertools import chain
 from typing import Mapping, Optional, Sequence
 
 from torch import nn
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
+
+from tensor_parallel.imports import verify_peft_version
 
 
 def nested_compare(t, u):
@@ -123,3 +126,20 @@ def find_tied_weight_aliases(
             find_tied_weight_aliases(module=submodule, destination=destination, prefix=prefix + name + ".")
 
     return destination
+
+
+def check_lora(module: nn.Module) -> bool:
+    """Checks if module is lora Linear from a correct version of PEFT
+
+    Args:
+        module (nn.Module): module to check
+
+    Returns:
+        bool: result
+    """
+    definition_module = getmodule(module)
+    if definition_module is not None and definition_module.__name__ == "peft.tuners.lora":
+        verify_peft_version()
+        return type(module).__name__ == "Linear"
+    else:
+        return False
