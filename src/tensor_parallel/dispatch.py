@@ -41,7 +41,9 @@ def infer_sharded_data_device_id(name: str):
     elif name.find("flat_shards.") != -1:
         shard_id_start = name.find("flat_shards.") + len("flat_shards.")
     else:
-        raise KeyError(f"Can't decide where to put {name}. Are you sure it's a tensor_parallel state dict?")
+        raise KeyError(
+            f"Can't decide where to put {name}. Are you sure you passed a tensor_parallel parameter was passed?"
+        )
 
     shard_id_end = name.find(".", shard_id_start)
     return int(name[shard_id_start:shard_id_end]) if shard_id_end > 0 else int(name[shard_id_start:])
