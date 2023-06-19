@@ -103,17 +103,30 @@ def test_save_keep_shards(devices, model_name, shard_as_pretrained):
     model_tp.load_state_dict(model_tp.state_dict())
 
 
+def get_tensor_parallel(model: torch.nn.Module, devices, pretrained: bool, zero3: bool):
+    if pretrained:
+        model_tp = TensorParallelPreTrainedModel(model, devices)
+        if zero3:
+            model_tp.wrapped_model = Sharded(model_tp.wrapped_model)
+    else:
+        model_tp = TensorParallel(model, devices)
+        if zero3:
+            model_tp = Sharded(model_tp)
+    return model_tp
+
+
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize(
     "model_name", ["bert-base-uncased", "hf-internal-testing/tiny-random-t5", "hf-internal-testing/tiny-random-bloom"]
 )
-@pytest.mark.parametrize("pretrained", [True])
-def test_save_shards_load_shards(devices, model_name, pretrained):
+@pytest.mark.parametrize("pretrained", [True, False])
+@pytest.mark.parametrize("zero3", [True, False])
+@pytest.mark.parametrize("meta", [True, False])
+def test_save_shards_load_shards(devices, model_name, pretrained, zero3, meta):
     devices = [torch.device(device) for device in devices]
 
     model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
-    shraded_class = TensorParallelPreTrainedModel if pretrained else TensorParallel
-    model_tp = shraded_class(model, devices)
+    model_tp = get_tensor_parallel(model, devices, pretrained, zero3)
 
     if pretrained:
         half_the_model = f"{sum([p.numel() for p in model_tp.parameters()]) // 1_000_000 // 2}MB"
@@ -122,8 +135,15 @@ def test_save_shards_load_shards(devices, model_name, pretrained):
         torch.save(model_tp.state_dict(), PATH_TO_SAVE + "test_save_shards_load_shards.bin")
     del model_tp
 
-    with init_empty_weights():
-        model_tp = shraded_class(AutoModel.from_config(AutoConfig.from_pretrained(model_name)).half(), devices)
+    if meta:
+        if zero3:
+            pytest.skip("Can't use zero3 with meta")
+        with init_empty_weights():
+            model_tp = get_tensor_parallel(
+                AutoModel.from_config(AutoConfig.from_pretrained(model_name)).half(), devices, pretrained, zero3
+            )
+    else:
+        model_tp = get_tensor_parallel(AutoModel.from_pretrained(model_name).half(), devices, pretrained, zero3)
 
     checkpoint = PATH_TO_SAVE + ("pytorch_model.bin.index.json" if pretrained else "test_save_shards_load_shards.bin")
     load_checkpoint_in_model(
