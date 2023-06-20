@@ -403,33 +403,6 @@ def get_refined_web_config(model_config: PretrainedConfig, devices: Sequence[tor
         world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
     )  # this operation ensures that we get attention cache for all heads on each device
 
-    # class SplitRefinedWebQKV(Split):
-    #     def __init__(self, world_size: int, n_head: int, n_head_kv: int, head_dim: int):
-    #         super().__init__(world_size, 0)
-    #         self.n_head = n_head
-    #         self.n_head_kv = n_head_kv
-    #         self.head_dim = head_dim
-
-    #     def __call__(self, tensor: torch.Tensor, rank: int) -> torch.Tensor:
-    #         """_summary_
-
-    #         Args:
-    #             tensor (torch.Tensor): [hidden_size, (n_head_kv * 2 + n_head) * head_dim]
-    #         """
-    #         tensor = tensor.permute(1, 0)
-    #         tensor = (
-    #             tensor.reshape(tensor.shape[0], 4, 3, -1, head_dim)
-    #             .permute(0, 1, 3, 2, 4)
-    #             .reshape(tensor.shape[0], tensor.shape[1])
-    #         )
-    #         tensor = split_heads(tensor, dim=1, head_dim=12 * head_dim, rank=rank, world_size=world_size)
-    #         result = (
-    #             tensor.reshape(tensor.shape[0], 4, -1, 3, head_dim)
-    #             .permute(0, 1, 3, 2, 4)
-    #             .reshape(tensor.shape[0], tensor.shape[1])
-    #         )
-    #         return result.permute(1, 0)
-
     return Config(
         state_rules={
             # Attention
@@ -439,12 +412,16 @@ def get_refined_web_config(model_config: PretrainedConfig, devices: Sequence[tor
             r".*self_attention\.dense\.weight$": SplitInChunks(
                 world_size=world_size, dim=1, chunk_size=q_per_kv * head_dim
             ),
+            # MLP
+            r".*mlp\.dense_h_to_4h\.weight$": Split(world_size=world_size, dim=0),
+            r".*mlp\.dense_4h_to_h\.weight$": Split(world_size=world_size, dim=1),
         },
         input_rules={
             r".*self_attention$": {"layer_past": select_kv_for_rank},
         },
         output_rules={
             r".*self_attention$": {0: "sum", 2: gather_kv_across_ranks},
+            r".*\.mlp$": {0: "sum"},
         },
         attr_rules={
             r".*self_attention$": {
