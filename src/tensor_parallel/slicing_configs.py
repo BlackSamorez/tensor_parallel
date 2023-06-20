@@ -386,6 +386,76 @@ def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.dev
     )
 
 
+def get_refined_web_config(model_config: PretrainedConfig, devices: Sequence[torch.device]) -> Config:
+    # We can't use `RWConfig`` since it's custom code
+    assert model_config.model_type == "RefinedWeb", f"Trying to pass {model_config.model_type} as RefinedWeb config"
+
+    world_size = len(devices)
+    hidden_size = model_config.hidden_size
+    num_heads = model_config.n_head
+    num_kv = model_config.n_head_kv
+    head_dim = hidden_size // num_heads
+    q_per_kv = num_heads // num_kv
+
+    head_dim = model_config.hidden_size // model_config.num_attention_heads
+
+    gather_kv_across_ranks = CollectiveOperation(
+        world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
+    )  # this operation ensures that we get attention cache for all heads on each device
+
+    # class SplitRefinedWebQKV(Split):
+    #     def __init__(self, world_size: int, n_head: int, n_head_kv: int, head_dim: int):
+    #         super().__init__(world_size, 0)
+    #         self.n_head = n_head
+    #         self.n_head_kv = n_head_kv
+    #         self.head_dim = head_dim
+
+    #     def __call__(self, tensor: torch.Tensor, rank: int) -> torch.Tensor:
+    #         """_summary_
+
+    #         Args:
+    #             tensor (torch.Tensor): [hidden_size, (n_head_kv * 2 + n_head) * head_dim]
+    #         """
+    #         tensor = tensor.permute(1, 0)
+    #         tensor = (
+    #             tensor.reshape(tensor.shape[0], 4, 3, -1, head_dim)
+    #             .permute(0, 1, 3, 2, 4)
+    #             .reshape(tensor.shape[0], tensor.shape[1])
+    #         )
+    #         tensor = split_heads(tensor, dim=1, head_dim=12 * head_dim, rank=rank, world_size=world_size)
+    #         result = (
+    #             tensor.reshape(tensor.shape[0], 4, -1, 3, head_dim)
+    #             .permute(0, 1, 3, 2, 4)
+    #             .reshape(tensor.shape[0], tensor.shape[1])
+    #         )
+    #         return result.permute(1, 0)
+
+    return Config(
+        state_rules={
+            # Attention
+            r".*self_attention\.query_key_value\.weight$": SplitInChunks(
+                world_size=world_size, dim=0, chunk_size=(2 + q_per_kv) * head_dim
+            ),
+            r".*self_attention\.dense\.weight$": SplitInChunks(
+                world_size=world_size, dim=1, chunk_size=q_per_kv * head_dim
+            ),
+        },
+        input_rules={
+            r".*self_attention$": {"layer_past": select_kv_for_rank},
+        },
+        output_rules={
+            r".*self_attention$": {0: "sum", 2: gather_kv_across_ranks},
+        },
+        attr_rules={
+            r".*self_attention$": {
+                "num_kv": partial(split_num_heads, world_size=world_size),
+                "num_heads": lambda n, rank: q_per_kv
+                * split_num_heads(n // q_per_kv, rank=rank, world_size=world_size),
+            }
+        },
+    )
+
+
 PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "bloom": get_bloom_config,
     "t5": get_t5_config,
@@ -394,4 +464,5 @@ PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "gpt_neox": get_gpt_neox_config,
     "codegen": get_codegen_config,
     "llama": get_llama_config,
+    "RefinedWeb": get_refined_web_config,
 }
