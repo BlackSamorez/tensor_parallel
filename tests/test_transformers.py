@@ -89,6 +89,9 @@ def test_multipurpose_configs(model_classes, model_name):
 def test_forward_gpt2_like(use_lora, use_config, devices, model_name):
     torch.manual_seed(0)
 
+    if model_name == "BlackSamorez/falcon-40b-tiny-testing" and torch.__version__ < "2.0":
+        pytest.skip(f"Not testing {model_name} with torch=={torch.__version__}")
+
     try:
         model = (
             AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True, trust_remote_code=True)
@@ -213,6 +216,9 @@ def test_forward_bert_like(use_lora, use_config, devices, model_name):
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 def test_generate(generate_kwargs, model_name, devices):
     torch.manual_seed(0)
+
+    if model_name == "BlackSamorez/falcon-40b-tiny-testing" and torch.__version__ < "2.0":
+        pytest.skip(f"Not testing {model_name} with torch=={torch.__version__}")
 
     def _generate_scores(model, input_ids, generate_kwargs):
         scores_tuple = model.generate(
