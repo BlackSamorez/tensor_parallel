@@ -389,6 +389,7 @@ def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.dev
 def get_refined_web_config(model_config: PretrainedConfig, devices: Sequence[torch.device]) -> Config:
     # We can't use `RWConfig`` since it's custom code
     assert model_config.model_type == "RefinedWeb", f"Trying to pass {model_config.model_type} as RefinedWeb config"
+    assert not model_config.bias and not model_config.alibi, f"Running Falcon with biases or alibi is not supported"
 
     world_size = len(devices)
     hidden_size = model_config.hidden_size
