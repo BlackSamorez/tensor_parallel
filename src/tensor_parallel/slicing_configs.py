@@ -415,13 +415,19 @@ def get_refined_web_config(model_config: PretrainedConfig, devices: Sequence[tor
             # MLP
             r".*mlp\.dense_h_to_4h\.weight$": Split(world_size=world_size, dim=0),
             r".*mlp\.dense_4h_to_h\.weight$": Split(world_size=world_size, dim=1),
+            # RWModel
+            r".*word_embeddings\.weight$": Split(world_size=world_size, dim=1),
         },
         input_rules={
             r".*self_attention$": {"layer_past": select_kv_for_rank},
+            r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
+            # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
         output_rules={
             r".*self_attention$": {0: "sum", 2: gather_kv_across_ranks},
             r".*\.mlp$": {0: "sum"},
+            r".*word_embeddings$": {0: "gather -1"},
+            r".*lm_head$": {0: "sum"},
         },
         attr_rules={
             r".*self_attention$": {
