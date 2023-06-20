@@ -424,7 +424,7 @@ def get_refined_web_config(model_config: PretrainedConfig, devices: Sequence[tor
             # ... lm_head's weights (tied embeddings) are already split across input dimension
         },
         output_rules={
-            r".*self_attention$": {0: "sum", 2: gather_kv_across_ranks},
+            r".*self_attention$": {0: "sum", 1: gather_kv_across_ranks},
             r".*\.mlp$": {0: "sum"},
             r".*word_embeddings$": {0: "gather -1"},
             r".*lm_head$": {0: "sum"},
