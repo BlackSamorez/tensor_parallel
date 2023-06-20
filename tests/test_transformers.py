@@ -207,6 +207,7 @@ def test_forward_bert_like(use_lora, use_config, devices, model_name):
         "gpt2",
         "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
         "Bingsu/llama-190m-arch",
+        "BlackSamorez/falcon-40b-tiny-testing",
     ],
 )
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
@@ -242,7 +243,9 @@ def test_generate(generate_kwargs, model_name, devices):
             )
         else:
             model = (
-                transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)
+                transformers.AutoModelForCausalLM.from_pretrained(
+                    model_name, low_cpu_mem_usage=True, trust_remote_code=True
+                )
                 .float()
                 .to(devices[0])
             )
