@@ -83,13 +83,21 @@ def test_multipurpose_configs(model_classes, model_name):
         "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
         "Salesforce/codegen-350M-mono",
         "Bingsu/llama-190m-arch",
+        "BlackSamorez/falcon-40b-tiny-testing",
     ],
 )
 def test_forward_gpt2_like(use_lora, use_config, devices, model_name):
     torch.manual_seed(0)
 
+    if model_name == "BlackSamorez/falcon-40b-tiny-testing" and torch.__version__ < "2.0":
+        pytest.skip(f"Not testing {model_name} with torch=={torch.__version__}")
+
     try:
-        model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+        model = (
+            AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True, trust_remote_code=True)
+            .float()
+            .to(devices[0])
+        )
     except KeyError as err:
         pytest.skip(f"Could not create model {model_name} with error {err}")
     if use_lora:
@@ -202,11 +210,15 @@ def test_forward_bert_like(use_lora, use_config, devices, model_name):
         "gpt2",
         "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
         "Bingsu/llama-190m-arch",
+        "BlackSamorez/falcon-40b-tiny-testing",
     ],
 )
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 def test_generate(generate_kwargs, model_name, devices):
     torch.manual_seed(0)
+
+    if model_name == "BlackSamorez/falcon-40b-tiny-testing" and torch.__version__ < "2.0":
+        pytest.skip(f"Not testing {model_name} with torch=={torch.__version__}")
 
     def _generate_scores(model, input_ids, generate_kwargs):
         scores_tuple = model.generate(
@@ -237,7 +249,9 @@ def test_generate(generate_kwargs, model_name, devices):
             )
         else:
             model = (
-                transformers.AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True)
+                transformers.AutoModelForCausalLM.from_pretrained(
+                    model_name, low_cpu_mem_usage=True, trust_remote_code=True
+                )
                 .float()
                 .to(devices[0])
             )

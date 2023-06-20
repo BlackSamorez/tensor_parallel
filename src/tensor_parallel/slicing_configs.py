@@ -386,6 +386,60 @@ def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.dev
     )
 
 
+def get_refined_web_config(model_config: PretrainedConfig, devices: Sequence[torch.device]) -> Config:
+    # We can't use `RWConfig`` since it's custom code
+    assert model_config.model_type == "RefinedWeb", f"Trying to pass {model_config.model_type} as RefinedWeb config"
+    assert not model_config.bias and not model_config.alibi, f"Running Falcon with biases or alibi is not supported"
+
+    world_size = len(devices)
+    hidden_size = model_config.hidden_size
+    num_heads = model_config.n_head
+    num_kv = model_config.n_head_kv
+    head_dim = hidden_size // num_heads
+    q_per_kv = num_heads // num_kv
+
+    head_dim = model_config.hidden_size // model_config.num_attention_heads
+
+    gather_kv_across_ranks = CollectiveOperation(
+        world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
+    )  # this operation ensures that we get attention cache for all heads on each device
+
+    return Config(
+        state_rules={
+            # Attention
+            r".*self_attention\.query_key_value\.weight$": SplitInChunks(
+                world_size=world_size, dim=0, chunk_size=(2 + q_per_kv) * head_dim
+            ),
+            r".*self_attention\.dense\.weight$": SplitInChunks(
+                world_size=world_size, dim=1, chunk_size=q_per_kv * head_dim
+            ),
+            # MLP
+            r".*mlp\.dense_h_to_4h\.weight$": Split(world_size=world_size, dim=0),
+            r".*mlp\.dense_4h_to_h\.weight$": Split(world_size=world_size, dim=1),
+            # RWModel
+            r".*word_embeddings\.weight$": Split(world_size=world_size, dim=1),
+        },
+        input_rules={
+            r".*self_attention$": {"layer_past": select_kv_for_rank},
+            r".*lm_head$": {0: "split -1"},  # note: we need to split lm_head inputs because
+            # ... lm_head's weights (tied embeddings) are already split across input dimension
+        },
+        output_rules={
+            r".*self_attention$": {0: "sum", 1: gather_kv_across_ranks},
+            r".*\.mlp$": {0: "sum"},
+            r".*word_embeddings$": {0: "gather -1"},
+            r".*lm_head$": {0: "sum"},
+        },
+        attr_rules={
+            r".*self_attention$": {
+                "num_kv": partial(split_num_heads, world_size=world_size),
+                "num_heads": lambda n, rank: q_per_kv
+                * split_num_heads(n // q_per_kv, rank=rank, world_size=world_size),
+            }
+        },
+    )
+
+
 PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "bloom": get_bloom_config,
     "t5": get_t5_config,
@@ -394,4 +448,5 @@ PREDEFINED_CONFIGS: Dict[str, ConfigGetter] = {
     "gpt_neox": get_gpt_neox_config,
     "codegen": get_codegen_config,
     "llama": get_llama_config,
+    "RefinedWeb": get_refined_web_config,
 }
