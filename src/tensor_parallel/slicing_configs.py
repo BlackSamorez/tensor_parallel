@@ -418,6 +418,8 @@ def get_refined_web_config(model_config: PretrainedConfig, devices: Sequence[tor
             r".*mlp\.dense_4h_to_h\.weight$": Split(world_size=world_size, dim=1),
             # RWModel
             r".*word_embeddings\.weight$": Split(world_size=world_size, dim=1),
+            # RWForCausalLM
+            r".*lm_head\.weight$": Split(world_size=world_size, dim=1),
         },
         input_rules={
             r".*self_attention$": {"layer_past": select_kv_for_rank},
