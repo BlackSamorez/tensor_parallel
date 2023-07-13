@@ -61,14 +61,22 @@ def tensor_parallel(
     else:
         if isinstance(module, PreTrainedModel):
             module = TensorParallelPreTrainedModel(
-                module, device_ids=device_ids, tensor_parallel_config=tensor_parallel_config, distributed=distributed, **kwargs
+                module,
+                device_ids=device_ids,
+                tensor_parallel_config=tensor_parallel_config,
+                distributed=distributed,
+                **kwargs,
             )
             module.wrapped_model = _maybe_sharded(
                 module.wrapped_model, sharded, num_trainable_parameters, sharded_param_names=sharded_param_names
             )
         else:
             module = TensorParallel(
-                module, device_ids=device_ids, tensor_parallel_config=tensor_parallel_config, distributed=distributed, **kwargs
+                module,
+                device_ids=device_ids,
+                tensor_parallel_config=tensor_parallel_config,
+                distributed=distributed,
+                **kwargs,
             )
             module = _maybe_sharded(module, sharded, num_trainable_parameters, sharded_param_names=sharded_param_names)
 
