@@ -43,6 +43,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
         output_device: Optional[torch.device] = None,
         output_device_index: Optional[int] = None,
         tensor_parallel_config: Optional[Config] = None,
+        distributed: bool = True,
     ):
         super().__init__(module.config)  # Temporary empty config. Gets replaced in from_pretrained
 
@@ -55,7 +56,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
             tensor_parallel_config = find_predefined_tensor_parallel_config(module.config, device_ids)
 
         self.wrapped_model = TensorParallel(
-            module, device_ids, output_device, output_device_index, tensor_parallel_config
+            module, device_ids, output_device, output_device_index, tensor_parallel_config, distributed=distributed
         )
 
     @property
