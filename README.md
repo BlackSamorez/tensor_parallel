@@ -4,7 +4,7 @@
 [![CI status](https://github.com/BlackSamorez/tensor_parallel/actions/workflows/run-tests.yaml/badge.svg?branch=main)](https://github.com/BlackSamorez/tensor_parallel/actions)
 
 <p align="center">
-    🚀 &nbsp;<b><a href="https://www.kaggle.com/code/blacksamorez/tensor-parallel-int8-llm/">Try new 20B LLMs demo in Kaggle</a></b>
+    🚀 &nbsp;<b><a href="https://www.kaggle.com/code/blacksamorez/tensor-parallel-int4-llm/">Try new 40B LLMs demo in Kaggle</a></b>
 </p>
 
 Run large PyTorch models on multiple GPUs in one line of code with potentially linear speedup.
@@ -43,14 +43,14 @@ For best memory efficiency, call `tp.tensor_parallel` while the model is still o
 
 Here are a few use cases:
 - [`examples/training_flan-t5-xl.ipynb`](./examples/training_flan-t5-xl.ipynb) - fine-tune full FLAN-T5 model on text summarization
-- [`tensor_parallel int8 LLM`](https://www.kaggle.com/code/blacksamorez/tensor-parallel-int8-llm/) - inferencing a large language model with LLM.8bit + tensor_parallel
+- [`tensor_parallel int8 LLM`](https://www.kaggle.com/code/blacksamorez/tensor-parallel-int8-llm/) - adapter-tuning a large language model with LLM.8bit + tensor_parallel
 - __TBA__ - defining custom parallelism strategy
 
 
 Advanced parameters to `tensor_parallel`:
 - `device_ids: List[device]` - which devices to use; defaults to all available GPUs
 - `output_device: device` - model outputs will have this device
-- `tensor_parallel_config: tp.Config` - use custom parallelism strategy, see [`slicing_configs.py`](./tensor_parallel/slicing_configs.py)
+- `tensor_parallel_config: tp.Config` - use custom parallelism strategy, see [`slicing_configs.py`](./src/tensor_parallel/slicing_configs.py)
 - `distributed: bool` - if True, use torch.distributed backend instead of threading (requires `torchrun`)
 - `sharded: bool` - if True, find all trainable parameters that weren't split by Tensor Parallelism and split them using [ZeRO-3 algorithm](https://deepspeed.readthedocs.io/en/latest/zero3.html).
    - weights will be split between GPUs and re-assembled before each forward pass
@@ -113,11 +113,11 @@ tensor_parallel_state_dict = tp.convert_state_dict(
 # Dispatch the partial state_dict (load_state_dict doesn't work with meta so here I use accelerate)
 device_map = tp.infer_sharded_device_map(model)
 for param_name, param in state_dict.items():
-  module_name = param_name
-  while len(module_name) > 0 and module_name not in device_map:
-      module_name = ".".join(module_name.split(".")[:-1])
-  param_device = device_map[module_name]
-  accelerate.utils.set_module_tensor_to_device(model, param_name, param_device, value=param)
+    module_name = param_name
+    while len(module_name) > 0 and module_name not in device_map:
+        module_name = ".".join(module_name.split(".")[:-1])
+    param_device = device_map[module_name]
+    accelerate.utils.set_module_tensor_to_device(model, param_name, param_device, value=param)
 ```
 
 With this no more than one part of the model needs to be loaded into memory at once. 
@@ -145,18 +145,16 @@ Why use `tensor_parallel` ...
   - DeepSpeed has many parallelization strategies, but requires careful configuration
   - tensor_parallel has one strategy that works with 1 line of code
   - tensor_parallel works in a jupyter notebook
-- v.s. [MegatronLM](https://github.com/NVIDIA/Megatron-LM)?
+- v.s. [MegatronLM](https://github.com/NVIDIA/Megatron-LM)
   - MegatronLM has _great_ tensor parallelism for one model architecture
   - tensor_parallel has _good_ parallelism for any architecture
   - tensor_parallel is way easier to install
-- v.s. [parallelformers](https://github.com/tunib-ai/parallelformers)?
-  - parallelformers implements a fixed [list of architectures](https://github.com/tunib-ai/parallelformers/tree/main/parallelformers/transformers)
-  - tensor_parallel works for any architecture automatically 
+- v.s. [parallelformers](https://github.com/tunib-ai/parallelformers) 
   - parallelformers is inference-only, tensor_parallel supports training
 - v.s. [`alpa`](https://github.com/alpa-projects/alpa)
   - alpa is a powerful tool for automatic distributed training / inference in JAX
   - tensor_parallel works with PyTorch
-- v.s. [`Model.parallelize()`](https://huggingface.co/docs/transformers/model_doc/gpt2#transformers.GPT2Model.parallelize)?
+- v.s. [`Model.parallelize()`](https://huggingface.co/docs/transformers/model_doc/gpt2#transformers.GPT2Model.parallelize)
   - both are easy to use, both fit large models
   - in parallelize, one GPU works at a time
   - in tensor_parallel, GPUs work in parallel
