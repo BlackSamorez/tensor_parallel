@@ -95,13 +95,13 @@ def prepare_model(model_name, use_lora):
 @pytest.mark.parametrize(
     "model_name",
     [
-        # "bigscience/bloom-560m",
-        # "gpt2",
-        # "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
-        # "Salesforce/codegen-350M-mono",
+        "bigscience/bloom-560m",
+        "gpt2",
+        "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
+        "Salesforce/codegen-350M-mono",
         "Bingsu/llama-190m-arch",
         "BlackSamorez/llama-2-tiny-testing",
-        # "BlackSamorez/falcon-40b-tiny-testing",
+        "BlackSamorez/falcon-40b-tiny-testing",
     ],
 )
 def test_forward_gpt2_like(use_lora, use_config, devices, model_name):
