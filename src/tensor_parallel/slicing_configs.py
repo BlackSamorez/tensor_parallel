@@ -350,15 +350,17 @@ def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.dev
     try:
         num_kv = model_config.num_key_value_heads
         q_per_kv = model_config.num_attention_heads // model_config.num_key_value_heads
+        new_modeling = True
     except AttributeError:
         num_kv = model_config.num_attention_heads
         q_per_kv = 1
+        new_modeling = False
 
     gather_kv_across_ranks = CollectiveOperation(
         world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
     )  # this operation ensures that we get attention cache for all heads on each device
 
-    return Config(
+    config = Config(
         state_rules={
             # LlamaAttention
             r".*self_attn\.q_proj\.weight$": SplitInChunks(
@@ -389,12 +391,16 @@ def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.dev
         attr_rules={
             r".*self_attn$": {
                 "hidden_size": partial(split_inner_dim, num_heads=num_kv, world_size=world_size),
-                "num_key_value_heads": partial(split_num_heads, world_size=world_size),
                 "num_heads": lambda n, rank: q_per_kv
                 * split_num_heads(n // q_per_kv, rank=rank, world_size=world_size),
             }
         },
     )
+
+    if new_modeling:
+        config.attr_rules[r".*self_attn$"]["num_key_value_heads"] = partial(split_num_heads, world_size=world_size)
+
+    return config
 
 
 def get_refined_web_config(model_config: PretrainedConfig, devices: Sequence[torch.device]) -> Config:
