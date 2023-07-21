@@ -51,7 +51,7 @@ class Config:
             all_rules[i] = dict((re.compile(pattern), actions) for pattern, actions in rule_set.items())
         self.state_rules, self.input_rules, self.output_rules, self.attr_rules = all_rules
 
-    def create_collective_ops(self, devices: Sequence[torch.device]):
+    def create_collective_ops(self, devices: Sequence[torch.device], distributed: bool = True):
         """
         Return a copy of config with thread-parallel collective operations, such as AllGather and AllReduce
 
@@ -59,8 +59,8 @@ class Config:
         """
         return dataclasses.replace(
             self,
-            input_rules=create_collective_ops(self.input_rules, devices),
-            output_rules=create_collective_ops(self.output_rules, devices),
+            input_rules=create_collective_ops(self.input_rules, devices, distributed),
+            output_rules=create_collective_ops(self.output_rules, devices, distributed),
         )
 
 
@@ -82,13 +82,13 @@ def convert_legacy_state_action(state_action: Any) -> StateAction:
     raise Exception(f"Can't convert {state_action} of type {type(state_action)} to StateAction")
 
 
-def create_collective_ops(rules: dict, devices: Sequence[torch.device]):
+def create_collective_ops(rules: dict, devices: Sequence[torch.device], distributed: bool = True):
     """Initialize collective thread-parallel operations from config rules"""
     world_size = len(devices)
     all_cuda = all(device.type == "cuda" for device in devices)
     unique_output_transforms = {op for output_actions in rules.values() for op in output_actions.values()}
     transform_map = {}
-    if torch.distributed.is_initialized():
+    if torch.distributed.is_initialized() and distributed:
         make_allreduce, make_allgather = DistributedAllReduce, DistributedAllGather
     elif all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
         make_allreduce, make_allgather = NCCLAllReduce, NCCLAllGather

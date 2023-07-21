@@ -30,6 +30,7 @@ class TensorParallel(nn.Module):
         output_device_index: Optional[int] = None,
         tensor_parallel_config: Optional[Config] = None,
         delay_init: bool = False,
+        distributed: bool = True,
     ):
         super().__init__()
         original_params = sum(p.numel() for p in module.parameters())
@@ -66,7 +67,7 @@ class TensorParallel(nn.Module):
         tensor_parallel_config = add_lora_rules(module, tensor_parallel_config)
         self.tensor_parallel_config = tensor_parallel_config
 
-        config_with_ops = tensor_parallel_config.create_collective_ops(self.devices)
+        config_with_ops = tensor_parallel_config.create_collective_ops(self.devices, distributed)
         # ^-- creates a copy of comfig with collective op instances, such as AllReduce and AllGather
 
         for rank, device in enumerate(self.devices):
