@@ -346,10 +346,13 @@ def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.dev
     assert model_config.model_type == "llama", f"Trying to pass {model_config.model_type} as llama config"
 
     world_size = len(devices)
-    num_heads = model_config.num_attention_heads
     head_dim = model_config.hidden_size // model_config.num_attention_heads
-    num_kv = model_config.num_key_value_heads
-    q_per_kv = model_config.num_attention_heads // model_config.num_key_value_heads
+    try:
+        num_kv = model_config.num_key_value_heads
+        q_per_kv = model_config.num_attention_heads // model_config.num_key_value_heads
+    except AttributeError:
+        num_kv = model_config.num_attention_heads
+        q_per_kv = 1
 
     gather_kv_across_ranks = CollectiveOperation(
         world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
