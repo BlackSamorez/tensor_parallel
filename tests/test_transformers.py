@@ -72,6 +72,23 @@ def test_multipurpose_configs(model_classes, model_name):
     )  # basically asserting that all of those have the same config
 
 
+def prepare_model(model_name, use_lora):
+    if model_name == "BlackSamorez/falcon-40b-tiny-testing" and torch.__version__ < "2.0":
+        pytest.skip(f"Not testing {model_name} with torch=={torch.__version__}")
+    if model_name == "BlackSamorez/llama-2-tiny-testing" and transformers.__version__ < "4.31":
+        pytest.skip(f"Not testing {model_name} with transformers=={transformers.__version__}")
+
+    try:
+        model = AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True, trust_remote_code=True).float()
+    except KeyError as err:
+        pytest.skip(f"Could not create model {model_name} with error {err}")
+    if use_lora:
+        if model_name == "gpt2":
+            pytest.skip("Not testing LoRA for gpt2")
+        model = add_lora(model, model_name)
+    return model
+
+
 @pytest.mark.parametrize("use_lora", [False, True])
 @pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
@@ -83,27 +100,14 @@ def test_multipurpose_configs(model_classes, model_name):
         "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
         "Salesforce/codegen-350M-mono",
         "Bingsu/llama-190m-arch",
+        "BlackSamorez/llama-2-tiny-testing",
         "BlackSamorez/falcon-40b-tiny-testing",
     ],
 )
 def test_forward_gpt2_like(use_lora, use_config, devices, model_name):
     torch.manual_seed(0)
 
-    if model_name == "BlackSamorez/falcon-40b-tiny-testing" and torch.__version__ < "2.0":
-        pytest.skip(f"Not testing {model_name} with torch=={torch.__version__}")
-
-    try:
-        model = (
-            AutoModelForCausalLM.from_pretrained(model_name, low_cpu_mem_usage=True, trust_remote_code=True)
-            .float()
-            .to(devices[0])
-        )
-    except KeyError as err:
-        pytest.skip(f"Could not create model {model_name} with error {err}")
-    if use_lora:
-        if model_name == "gpt2":
-            pytest.skip("Not testing LoRA for gpt2")
-        model = add_lora(model, model_name)
+    model = prepare_model(model_name, use_lora)
 
     inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
     inp2 = torch.randint(1, 1000, size=(2, 1), device=devices[0])
