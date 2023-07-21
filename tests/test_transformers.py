@@ -83,6 +83,7 @@ def test_multipurpose_configs(model_classes, model_name):
         "trl-internal-testing/tiny-random-GPTNeoXForCausalLM",
         "Salesforce/codegen-350M-mono",
         "Bingsu/llama-190m-arch",
+        "BlackSamorez/llama-2-tiny-testing",
         "BlackSamorez/falcon-40b-tiny-testing",
     ],
 )

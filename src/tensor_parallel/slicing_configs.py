@@ -348,6 +348,8 @@ def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.dev
     world_size = len(devices)
     num_heads = model_config.num_attention_heads
     head_dim = model_config.hidden_size // model_config.num_attention_heads
+    num_kv = model_config.num_key_value_heads
+    q_per_kv = model_config.num_attention_heads // model_config.num_key_value_heads
 
     gather_kv_across_ranks = CollectiveOperation(
         world_size=world_size, func=lambda *kvs: gather_kv(*kvs, world_size=world_size)
@@ -356,10 +358,14 @@ def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.dev
     return Config(
         state_rules={
             # LlamaAttention
-            r".*self_attn\.q_proj\.weight$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
+            r".*self_attn\.q_proj\.weight$": SplitInChunks(
+                world_size=world_size, dim=0, chunk_size=q_per_kv * head_dim
+            ),
             r".*self_attn\.k_proj\.weight$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
             r".*self_attn\.v_proj\.weight$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
-            r".*self_attn\.o_proj\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
+            r".*self_attn\.o_proj\.weight$": SplitInChunks(
+                world_size=world_size, dim=1, chunk_size=q_per_kv * head_dim
+            ),
             # LlamaFeedForward
             r".*mlp\.gate_proj\.weight$": Split(world_size=world_size, dim=0),
             r".*mlp\.down_proj\.weight$": Split(world_size=world_size, dim=1),
@@ -379,8 +385,10 @@ def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.dev
         },
         attr_rules={
             r".*self_attn$": {
-                "hidden_size": partial(split_inner_dim, num_heads=num_heads, world_size=world_size),
-                "num_heads": partial(split_num_heads, world_size=world_size),
+                "hidden_size": partial(split_inner_dim, num_heads=num_kv, world_size=world_size),
+                "num_key_value_heads": partial(split_num_heads, world_size=world_size),
+                "num_heads": lambda n, rank: q_per_kv
+                * split_num_heads(n // q_per_kv, rank=rank, world_size=world_size),
             }
         },
     )
