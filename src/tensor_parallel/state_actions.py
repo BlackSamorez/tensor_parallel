@@ -90,31 +90,30 @@ class SplitInChunks(Split):
         return torch.cat([tensor.cpu() for tensor in tensors], dim=self.dim)
 
 
-class SplitInsideChunks(Split):
-    """AAABBBCCCDDDEEE -> (world_size = 3, num_chunks = 5) -> [ABCDE, ABCDE, ABCDE]"""
+class SplitInGroupedChunks(Split):
+    """AABBCCDDEE AABBCCDDEE AABBCCDDEE -> (world_size = 3, num_groups = 3, chunk_size = 2) -> [AABB AABB AABB, CCDD CCDD CCDD, EE EE EE]"""
 
-    def __init__(self, world_size: int, dim: int, num_chunks: int) -> None:
+    def __init__(self, world_size: int, dim: int, num_groups: int, chunk_size: int) -> None:
         super().__init__(world_size, dim)
-        self.num_chunks = num_chunks
+        self.num_groups = num_groups
+        self.chunk_size = chunk_size
 
     def __call__(self, tensor: Tensor, rank: int) -> Tensor:
-        shape = list(tensor.shape)
-        shape[self.dim] = shape[self.dim] // self.num_chunks
-        shape.insert(self.dim, self.num_chunks)
-        grouped_tensor = tensor.reshape(*shape)
-        grouped_shard = torch.tensor_split(grouped_tensor, self.world_size, dim=self.dim + 1)[rank]
-        return torch.flatten(grouped_shard, start_dim=self.dim, end_dim=self.dim + 1)
+        shape = list(tensor.shape)  # ... x hidden_size x ...
+        shape[self.dim] //= self.num_groups
+        shape.insert(self.dim, self.num_groups)  # ... group x group_size x ...
+        shape[self.dim + 1] //= self.chunk_size
+        shape.insert(self.dim + 2, self.chunk_size)  # ... group x chunk x chunk_size ...
+        return (
+            tensor.reshape(shape).tensor_split(self.world_size, dim=self.dim + 1)[rank].flatten(self.dim, self.dim + 2)
+        )
 
     def undo(self, tensors: Sequence[Tensor]) -> Tensor:
         grouped_tensor = []
         for tensor in tensors:
-            shape = list(input.shape)
-            shape[self.dim] = shape[self.dim] // self.num_chunks
-            shape.insert(self.dim, self.num_chunks)
+            shape = list(tensor.shape)  # ... x hidden_size x ...
+            shape[self.dim] = shape[self.dim] // self.num_groups
+            shape.insert(self.dim, self.num_groups)  # ... group x group_size x ...
             grouped_tensor.append(tensor.reshape(*shape).cpu())
 
-        output_shape = tensors[0].shape
-        del output_shape[self.dim]
-        output_shape[self.dim] = -1
-
-        return torch.cat(grouped_tensor, dim=self.dim).reshape(*output_shape)
+        return torch.cat(grouped_tensor, dim=self.dim + 1).flatten(self.dim, self.dim + 1)
