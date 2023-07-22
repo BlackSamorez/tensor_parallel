@@ -23,7 +23,7 @@ from tensor_parallel.aux_actions import (
 from tensor_parallel.communications import CollectiveOperation
 from tensor_parallel.config import Config
 from tensor_parallel.per_device_tensors import PerDeviceTensors
-from tensor_parallel.state_actions import Scale, Split, SplitInChunks, SplitInsideChunks
+from tensor_parallel.state_actions import Scale, Split, SplitInChunks, SplitInGroupedChunks
 
 ConfigGetter = Callable[[PretrainedConfig, Sequence[torch.device]], Config]
 
@@ -188,8 +188,8 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
     return Config(
         state_rules={
             # GPT2Attention
-            r".*c_attn\.weight$": SplitInsideChunks(world_size=world_size, dim=1, num_chunks=3),
-            r".*c_attn\.bias$": SplitInsideChunks(world_size=world_size, dim=0, num_chunks=3),
+            r".*c_attn\.weight$": SplitInGroupedChunks(world_size=world_size, dim=1, num_groups=3, chunk_size=head_dim),
+            r".*c_attn\.bias$": SplitInGroupedChunks(world_size=world_size, dim=0, num_groups=3, chunk_size=head_dim),
             r".*q_attn\.weight$": SplitInChunks(world_size=world_size, dim=1, chunk_size=head_dim),
             r".*q_attn\.bias$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),
             r".*attn\.c_proj\.weight$": SplitInChunks(world_size=world_size, dim=0, chunk_size=head_dim),

@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn.modules import conv
 
 from tensor_parallel.config import Config
-from tensor_parallel.state_actions import Scale, Split, SplitInsideChunks
+from tensor_parallel.state_actions import Scale, Split, SplitInGroupedChunks
 
 
 def get_default_config(module: nn.Module, device_ids: Sequence[torch.device]) -> Config:
@@ -63,11 +63,13 @@ def get_default_config(module: nn.Module, device_ids: Sequence[torch.device]) ->
             if not module.transposed:
                 state_rules[f"^{name}.weight$"] = Split(world_size=len(device_ids), dim=1)
             else:
-                state_rules[f"^{name}.weight$"] = SplitInsideChunks(
-                    world_size=len(device_ids), dim=0, num_chunks=groups
+                state_rules[f"^{name}.weight$"] = SplitInGroupedChunks(
+                    world_size=len(device_ids), dim=0, num_groups=groups, chunk_size=1
                 )
             if module.bias is not None:
                 state_rules[f"^{name}.bias$"] = Scale(world_size=len(device_ids))
-            input_rules[f"^{name}$"] = {0: SplitInsideChunks(world_size=len(device_ids), dim=1, num_chunks=groups)}
+            input_rules[f"^{name}$"] = {
+                0: SplitInGroupedChunks(world_size=len(device_ids), dim=1, num_groups=groups, chunk_size=1)
+            }
             output_rules[f"^{name}$"] = {0: "sum"}
     return Config(state_rules, input_rules, output_rules, {})
