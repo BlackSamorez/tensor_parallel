@@ -44,7 +44,7 @@ def test_no_parallelism_zero_3(devices, model_name):
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize(
-    "model_name", ["bert-base-uncased", "hf-internal-testing/tiny-random-t5", "hf-internal-testing/tiny-random-t5"]
+    "model_name", ["bert-base-uncased", "gpt2", "hf-internal-testing/tiny-random-t5"]
 )
 def test_parallelism_no_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0]).half()

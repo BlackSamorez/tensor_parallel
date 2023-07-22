@@ -111,13 +111,9 @@ class SplitInGroupedChunks(Split):
     def undo(self, tensors: Sequence[Tensor]) -> Tensor:
         grouped_tensor = []
         for tensor in tensors:
-            shape = list(input.shape)
-            shape[self.dim] = shape[self.dim] // self.num_chunks
-            shape.insert(self.dim, self.num_chunks)
+            shape = list(tensor.shape)  # ... x hidden_size x ...
+            shape[self.dim] = shape[self.dim] // self.num_groups
+            shape.insert(self.dim, self.num_groups)  # ... group x group_size x ...
             grouped_tensor.append(tensor.reshape(*shape).cpu())
 
-        output_shape = tensors[0].shape
-        del output_shape[self.dim]
-        output_shape[self.dim] = -1
-
-        return torch.cat(grouped_tensor, dim=self.dim).reshape(*output_shape)
+        return torch.cat(grouped_tensor, dim=self.dim + 1).flatten(self.dim, self.dim + 1)
