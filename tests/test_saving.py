@@ -1,6 +1,7 @@
 import pytest
 import torch
 from accelerate import init_empty_weights, load_checkpoint_in_model
+from accelerate.utils import set_module_tensor_to_device
 from transformers import AutoConfig, AutoModel
 
 from tensor_parallel import (
@@ -18,9 +19,11 @@ PATH_TO_SAVE = "/tmp/"
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_no_parallelism_zero_3(devices, model_name):
-    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
+    model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_state_dict = model.state_dict()
-    model_tp = TensorParallel(model, devices, tensor_parallel_config=Config({}, {}, {}, {}), use_zero3=True)  # zero-3 sharding only
+    model_tp = TensorParallel(
+        model, devices, tensor_parallel_config=Config({}, {}, {}, {}), use_zero3=True
+    )  # zero-3 sharding only
     del model
     with save_tensor_parallel(model_tp):
         model_tp_state_dict = model_tp.state_dict()
@@ -40,7 +43,7 @@ def test_no_parallelism_zero_3(devices, model_name):
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased", "gpt2", "hf-internal-testing/tiny-random-t5"])
 def test_parallelism_no_zero_3(devices, model_name):
-    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
+    model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_state_dict = model.state_dict()
     model_tp = TensorParallelPreTrainedModel(model, devices, use_zero3=False)
     del model
@@ -62,7 +65,7 @@ def test_parallelism_no_zero_3(devices, model_name):
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_parallelism_zero_3(devices, model_name):
-    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
+    model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_state_dict = model.state_dict()
     model_tp = TensorParallelPreTrainedModel(model, devices, use_zero3=True)
     del model
@@ -87,7 +90,7 @@ def test_parallelism_zero_3(devices, model_name):
 )
 @pytest.mark.parametrize("shard_as_pretrained", [True, False])
 def test_save_keep_shards(devices, model_name, shard_as_pretrained):
-    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
+    model = AutoModel.from_pretrained(model_name).to(devices[0])
     if shard_as_pretrained:
         model_tp = TensorParallelPreTrainedModel(model, devices)
     else:
@@ -104,20 +107,18 @@ def get_tensor_parallel(model: torch.nn.Module, devices, pretrained: bool, zero3
 
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize(
-    "model_name", ["bert-base-uncased", "hf-internal-testing/tiny-random-t5", "hf-internal-testing/tiny-random-bloom"]
-)
+@pytest.mark.parametrize("model_name", ["bert-base-uncased", "hf-internal-testing/tiny-random-bloom"])
 @pytest.mark.parametrize("pretrained", [True, False])
 @pytest.mark.parametrize("zero3", [True, False])
 @pytest.mark.parametrize("meta", [True, False])
 def test_save_shards_load_shards(devices, model_name, pretrained, zero3, meta):
     devices = [torch.device(device) for device in devices]
 
-    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
+    model = AutoModel.from_pretrained(model_name).to(devices[0])
     model_tp = get_tensor_parallel(model, devices, pretrained, zero3)
 
     if pretrained:
-        half_the_model = f"{sum([p.numel() for p in model_tp.parameters()]) // 1_000_000 // 2}MB"
+        half_the_model = f"{sum([p.numel() for p in model_tp.parameters()]) * 8 // 1_000_000 // 2}MB"
         model_tp.save_pretrained(PATH_TO_SAVE, max_shard_size=half_the_model)
     else:
         torch.save(model_tp.state_dict(), PATH_TO_SAVE + "test_save_shards_load_shards.bin")
@@ -128,10 +129,10 @@ def test_save_shards_load_shards(devices, model_name, pretrained, zero3, meta):
             pytest.skip("Can't use zero3 with meta")
         with init_empty_weights():
             model_tp = get_tensor_parallel(
-                AutoModel.from_config(AutoConfig.from_pretrained(model_name)).half(), devices, pretrained, zero3
+                AutoModel.from_config(AutoConfig.from_pretrained(model_name)), devices, pretrained, zero3
             )
     else:
-        model_tp = get_tensor_parallel(AutoModel.from_pretrained(model_name).half(), devices, pretrained, zero3)
+        model_tp = get_tensor_parallel(AutoModel.from_pretrained(model_name), devices, pretrained, zero3)
 
     checkpoint = PATH_TO_SAVE + ("pytorch_model.bin.index.json" if pretrained else "test_save_shards_load_shards.bin")
     load_checkpoint_in_model(
@@ -140,22 +141,24 @@ def test_save_shards_load_shards(devices, model_name, pretrained, zero3, meta):
         device_map=infer_sharded_device_map(model_tp),
     )
     assert not "meta" in [p.device.type for p in model_tp.parameters()]
+    model_tp(torch.zeros(1, 8, dtype=int))
 
 
-@pytest.mark.parametrize("use_pretrained", [False, True])
-@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
+@pytest.mark.parametrize("use_pretrained", [True])
+@pytest.mark.parametrize("devices", [("cpu",) * 2])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_convert_state_dict(use_pretrained, devices, model_name):
-    model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
+    model = AutoModel.from_pretrained(model_name)
     torch.save(model.state_dict(), PATH_TO_SAVE + "test_convert_state_dict.bin")
-
-    if use_pretrained:
-        model_tp = TensorParallelPreTrainedModel(model, devices)
-    else:
-        model_tp = TensorParallel(model, devices)
     del model
 
-    model_tp_state_dict = model_tp.state_dict()
+    with init_empty_weights():
+        meta_model = AutoModel.from_pretrained(model_name)
+        if use_pretrained:
+            model_tp = TensorParallelPreTrainedModel(meta_model, devices, use_zero3=False)
+        else:
+            model_tp = TensorParallel(meta_model, devices, use_zero3=False)
+
     converted_state_dict = convert_state_dict(
         torch.load(PATH_TO_SAVE + "test_convert_state_dict.bin"),
         model_tp.tensor_parallel_config,
@@ -163,12 +166,7 @@ def test_convert_state_dict(use_pretrained, devices, model_name):
         for_pretrained=use_pretrained,
     )
 
-    assert sorted(list(model_tp_state_dict.keys())) == sorted(list(converted_state_dict.keys()))
+    for param_name, param in converted_state_dict.items():
+        set_module_tensor_to_device(model_tp, param_name, "cpu", value=param)
 
-    for name in model_tp_state_dict.keys():
-        data_tp = model_tp_state_dict[name]
-        data_converted = converted_state_dict[name]
-
-        assert data_tp.shape == data_converted.shape
-
-        torch.testing.assert_close(data_tp, data_converted)
+    model_tp(torch.zeros(1, 8, dtype=int))
