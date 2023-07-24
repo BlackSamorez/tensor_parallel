@@ -70,10 +70,15 @@ class TensorParallel(nn.Module):
         config_with_ops = tensor_parallel_config.create_collective_ops(self.devices, distributed)
         # ^-- creates a copy of comfig with collective op instances, such as AllReduce and AllGather
 
+        self.modified_parameters_names = set()
         for rank, device in enumerate(self.devices):
             if delay_init:
                 device = torch.device("cpu")
-            self.module_shards.append(make_shard(module, device, config_with_ops, rank=rank, world_size=world_size))
+            shard, modified_parameters_names = make_shard(
+                module, device, config_with_ops, rank=rank, world_size=world_size
+            )
+            self.module_shards.append(shard)
+            self.modified_parameters_names.update(modified_parameters_names)
 
         # self-diagnostics: check if the model was sharded properly
 

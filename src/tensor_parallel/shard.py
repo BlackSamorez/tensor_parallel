@@ -1,7 +1,7 @@
 import logging
 from copy import deepcopy
 from itertools import chain
-from typing import Dict, Optional
+from typing import Collection, Dict, Optional, Tuple
 
 import torch
 from torch import nn
@@ -13,8 +13,21 @@ from tensor_parallel.wrapper import TensorParallelWrapper
 logger = logging.getLogger(__file__)
 
 
-def make_shard(module: nn.Module, device: torch.device, config: Config, *, rank: int, world_size: int) -> nn.Module:
-    """Apply a tensor-parallel config to a high-level module, return module shard for a given rank and device"""
+def make_shard(
+    module: nn.Module, device: torch.device, config: Config, *, rank: int, world_size: int
+) -> Tuple[nn.Module, Collection[str]]:
+    """Apply a tensor-parallel config to a high-level module, return module shard for a given rank and device
+
+    Args:
+        module (nn.Module): Module to make a shard of
+        device (torch.device): Device, on which to put shard
+        config (Config): Config to create shard by
+        rank (int): Rank of the shard
+        world_size (int): Total number of shards
+
+    Returns:
+        Tuple[nn.Module, Collection[str]]: Shard and a set of modified parameter names
+    """
     assert (
         len(list(module.children())) != 0
     ), "Please ensure module is a container (e.g. Sequential), not a single layer"
@@ -40,7 +53,7 @@ def make_shard(module: nn.Module, device: torch.device, config: Config, *, rank:
     del module, substitutes
 
     # convert parameters and buffers
-    process_state_(shard, source_tensors, config, rank=rank, world_size=world_size)
+    modified_parameter_names = process_state_(shard, source_tensors, config, rank=rank, world_size=world_size)
     del source_tensors
 
     # convert or wrap intermediate modules
@@ -62,7 +75,7 @@ def make_shard(module: nn.Module, device: torch.device, config: Config, *, rank:
     # it's not necessary to specify in a config
     fix_general_attributes(shard)
 
-    return unique_wrappers.get(shard, shard)  # wrap the root module if needed
+    return unique_wrappers.get(shard, shard), modified_parameter_names  # wrap the root module if needed
 
 
 def make_distributed_shard(module: nn.Module, device: torch.device, config: Optional[Config] = None):
@@ -116,17 +129,26 @@ def find_matching_actions(action_type: str, name: str, rules: ModuleRules) -> Ma
 @torch.no_grad()
 def process_state_(
     sharded_module: nn.Module, source_tensors: Dict[str, torch.Tensor], config: Config, *, rank: int, world_size: int
-):
+) -> Collection[str]:
+    """Initialize sharded_module's parameters and buffers by applying prescribed rules to source_module's buffers
+
+    Args:
+        sharded_module (nn.Module): target module that will be modified in-place
+        source_tensors (Dict[str, torch.Tensor]): original parameters and buffers on a source device
+        config (Config): config to split by
+        rank (int): shard rank
+        world_size (int): number of shards
+
+    Returns:
+        Collection[str]: set of parameter/buffer names modified
     """
-    Initialize sharded_module's parameters and buffers by applying prescribed rules to source_module's buffers
-    :param sharded_module: target module that will be modified in-place
-    :param source_tensors: original parameters and buffers on a source device
-    """
+    modified_parameter_names = set()
     unused_patterns = set(config.state_rules.keys())
     for name, state in chain(sharded_module.named_parameters(), sharded_module.named_buffers()):
         for pattern, action in config.state_rules.items():
             if pattern.search(name) is not None:
                 new_data = action(source_tensors[name], rank=rank)
+                modified_parameter_names.add(name)
                 unused_patterns.discard(pattern)
                 break
         else:
@@ -137,6 +159,8 @@ def process_state_(
 
     if unused_patterns:
         logger.warning(f"The following patterns in state_rules were unused: {[str(p) for p in unused_patterns]}")
+
+    return modified_parameter_names
 
 
 def process_attrs_(module: nn.Module, actions: MappedActions, rank: int, world_size: int):
