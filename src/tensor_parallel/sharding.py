@@ -11,7 +11,7 @@ from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
 import torch
 from torch import nn
 
-from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE
+from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE, get_parameter_name_mapping
 from tensor_parallel.cross_device_ops import all_gather
 from tensor_parallel.tensor_parallel import TensorParallel
 
@@ -22,7 +22,7 @@ class Sharded(nn.ModuleList):
     def __init__(
         self,
         module: TensorParallel,
-        sharded_param_names: Optional[Collection[str]] = None,
+        replicated_param_names: Optional[Collection[str]] = None,
         ranks: Optional[Sequence[int]] = None,
         world_size: Optional[int] = None,
     ):
@@ -37,33 +37,34 @@ class Sharded(nn.ModuleList):
         module_shards = module.module_shards
         if len(module_shards) == 1:
             return
-        if sharded_param_names is None:
+        if replicated_param_names is None:
             if any([p.device.type == "meta" for p in module.parameters()]):
                 raise RuntimeError(
                     "Trying to shard a model containing data on 'meta' device without providing 'sharded_param_names'. Consider sharding a model after loading the data for automatic sharding."
                 )
 
-            sharded_param_names = find_replicated_parameters(*module_shards, only_trainable=True)
+            all_param_names = set(name for name, _ in module_shards[0].named_parameters())
+            replicated_param_names = all_param_names - module.modified_parameters_names
 
-        self.sharded_param_names = sharded_param_names = tuple(sharded_param_names)
-        if not sharded_param_names:
+        self.sharded_param_names = replicated_param_names = tuple(replicated_param_names)
+        if not replicated_param_names:
             logger.warning("Did not find any parameters to shard")
             return
 
         self.ranks = ranks = tuple(ranks if ranks is not None else range(len(module_shards)))
         assert ranks == tuple(sorted(ranks)), "ranks (and module shards) must be ordered from lowest to highest rank"
         self.world_size = world_size = world_size if world_size is not None else len(module_shards)
-        sharded_param_names_set = set(sharded_param_names)
+        sharded_param_names_set = set(replicated_param_names)
         all_param_shapes = {
             name: param.shape for name, param in module_shards[0].named_parameters() if name in sharded_param_names_set
         }
-        self._sharded_param_shapes = [all_param_shapes[name] for name in sharded_param_names]
-        flat_shards, shard_sizes_with_pad = _make_flat_shards(sharded_param_names, module_shards, ranks, world_size)
+        self._sharded_param_shapes = [all_param_shapes[name] for name in replicated_param_names]
+        flat_shards, shard_sizes_with_pad = _make_flat_shards(replicated_param_names, module_shards, ranks, world_size)
         self.flat_shards = nn.ParameterList(list(map(nn.Parameter, flat_shards)))
         self._shard_sizes_with_pad = shard_sizes_with_pad
 
         # prepare a list of all module-parameter pairs affected by sharding
-        self.param_occurences_by_rank = [_find_all_occurences(shard, sharded_param_names) for shard in module_shards]
+        self.param_occurences_by_rank = [_find_all_occurences(shard, replicated_param_names) for shard in module_shards]
 
         # remove original parameters
         for param_occurences in self.param_occurences_by_rank:
@@ -137,35 +138,6 @@ class Sharded(nn.ModuleList):
     @property
     def module_shards(self):
         return self.module.module_shards
-
-
-@torch.no_grad()
-def find_replicated_parameters(*module_shards: nn.Module, only_trainable: bool) -> Set[str]:
-    """
-    Detects parameters that are replicated across model shards, return a set parameter names
-    Parameters are replicated if they have the same value (and name) across all shards
-    """
-    assert len(module_shards) > 1, "please specify several module shards as *args"
-    named_params_by_shard = [dict(shard.named_parameters()) for shard in module_shards]
-    param_names = set(named_params_by_shard[0].keys())
-
-    replicated_params = set()
-    for param_name in param_names:
-        shard0_value = named_params_by_shard[0][param_name]
-        for i in range(len(module_shards)):
-            shard_i_value = named_params_by_shard[i].get(param_name)
-            if shard_i_value is None:
-                logger.warning(f"Parameter {param_name} not found in module shard {i}")
-                break
-            if only_trainable and not shard_i_value.requires_grad:
-                break
-            if shard0_value.shape != shard_i_value.shape or shard0_value.dtype != shard_i_value.dtype:
-                break
-            if torch.any(torch.ne(shard0_value.cpu(), shard_i_value.cpu())):
-                break
-        else:
-            replicated_params.add(param_name)
-    return replicated_params
 
 
 @torch.no_grad()

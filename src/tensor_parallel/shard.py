@@ -7,7 +7,7 @@ import torch
 from torch import nn
 
 from tensor_parallel.autoconfig import get_default_config
-from tensor_parallel.config import Config, MappedActions, ModuleRules
+from tensor_parallel.config import Config, MappedActions, ModuleRules, get_parameter_name_mapping
 from tensor_parallel.wrapper import TensorParallelWrapper
 
 logger = logging.getLogger(__file__)
@@ -26,7 +26,7 @@ def make_shard(
         world_size (int): Total number of shards
 
     Returns:
-        Tuple[nn.Module, Collection[str]]: Shard and a set of modified parameter names
+        Tuple[nn.Module, Collection[str]]: Shard and a set of modified parameter names after modification
     """
     assert (
         len(list(module.children())) != 0
@@ -74,8 +74,11 @@ def make_shard(
     # automatically fixes certain submodule attributes such that
     # it's not necessary to specify in a config
     fix_general_attributes(shard)
+    shard = unique_wrappers.get(shard, shard)  # wrap the root module if needed
 
-    return unique_wrappers.get(shard, shard), modified_parameter_names  # wrap the root module if needed
+    modified_parameter_names = set(get_parameter_name_mapping(modified_parameter_names, config).values())
+
+    return shard, modified_parameter_names
 
 
 def make_distributed_shard(module: nn.Module, device: torch.device, config: Optional[Config] = None):

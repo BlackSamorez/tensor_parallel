@@ -21,7 +21,7 @@ def tensor_parallel(
     tensor_parallel_config: Optional[Config] = None,
     distributed: Optional[bool] = None,
     sharded: Optional[bool] = None,
-    sharded_param_names: Optional[Collection[str]] = None,
+    replicated_param_names: Optional[Collection[str]] = None,
     **kwargs,
 ) -> nn.Module:
     """
@@ -42,12 +42,17 @@ def tensor_parallel(
        defaults to True if torch.distributed.is_initialized, else False
     :param sharded: if True, any non-tensor-parallel parameters (e.g. layernorm weight) will still be sharded,
        and manually re-assembled for each forward. This is equivalent to pytorch FullyShardedDataParallel
-    :param sharded_param_names: if sharded=True, this is a list of all parameter names (strings) that ZeRO-3 applies to;
-       by default, ZeRO-3 applies to all parameters that are not split with tensor parallelism.
-    :note: the default sharded_param_names are formed of parameters that are equal between shards after TP is applied
+    :param replicated_param_names: if sharded=True, this is a list of all parameter names (strings) that ZeRO-3 applies to;
+       by default, ZeRO-3 applies to all parameters that are not split with tensor parallelism and are trainable.
     :param kwargs: additional keyword arguments passed to TensorParallel init
 
     """
+    if "sharded_param_names" in kwargs:
+        replicated_param_names = kwargs["sharded_param_names"]
+        logger.warning(
+            f"`sharded_param_names` argument has been renamed to `replicated_param_names`. Please use the latter since the former will be deprecated."
+        )
+
     num_trainable_parameters = sum(p.numel() for p in module.parameters() if p.requires_grad)
     distributed = distributed if distributed is not None else torch.distributed.is_initialized()
 
@@ -68,7 +73,7 @@ def tensor_parallel(
                 **kwargs,
             )
             module.wrapped_model = _maybe_sharded(
-                module.wrapped_model, sharded, num_trainable_parameters, sharded_param_names=sharded_param_names
+                module.wrapped_model, sharded, num_trainable_parameters, replicated_param_names=replicated_param_names
             )
         else:
             module = TensorParallel(
@@ -78,7 +83,9 @@ def tensor_parallel(
                 distributed=distributed,
                 **kwargs,
             )
-            module = _maybe_sharded(module, sharded, num_trainable_parameters, sharded_param_names=sharded_param_names)
+            module = _maybe_sharded(
+                module, sharded, num_trainable_parameters, replicated_param_names=replicated_param_names
+            )
 
         return module
 
@@ -87,7 +94,7 @@ def _maybe_sharded(
     module: TensorParallel,
     sharded: Optional[bool],
     num_trainable_parameters: int,
-    sharded_param_names: Optional[Collection[str]],
+    replicated_param_names: Optional[Collection[str]],
     **kwargs,
 ) -> Union[Sharded, TensorParallel]:
     """Determines if sharding is necessary, returns either Sharded(module) or module itself, if unchanged"""
@@ -99,7 +106,7 @@ def _maybe_sharded(
         # use sharding if there are some *trainable* parameter that are replicated on more than one device
 
     model_is_meta = any([p.device.type == "meta" for p in module.parameters()])
-    if sharded and model_is_meta and sharded_param_names is None:
+    if sharded and model_is_meta and replicated_param_names is None:
         logger.warning(
             f"Not sharding the model that should be sharded because it has meta tensors which prevent sharding without 'sharded_param_names'. It's recomended to shard a model after loading it's weights."
         )
@@ -109,4 +116,4 @@ def _maybe_sharded(
         replicated_parameters = num_extra_parameters // max(1, len(module.devices) - 1)
         logger.warning(f"Using ZeRO-3 sharding for {replicated_parameters} non tensor-parallel parameters")
 
-    return Sharded(module, sharded_param_names=sharded_param_names, **kwargs) if sharded else module
+    return Sharded(module, replicated_param_names=replicated_param_names, **kwargs) if sharded else module

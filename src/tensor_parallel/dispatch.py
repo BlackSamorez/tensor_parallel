@@ -1,10 +1,10 @@
 import re
 from contextlib import contextmanager
-from itertools import chain
 from typing import Union
 
 import torch
 
+from tensor_parallel.config import get_parameter_name_mapping
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
 from tensor_parallel.sharding import Sharded
 from tensor_parallel.tensor_parallel import Config, TensorParallel
@@ -112,21 +112,7 @@ def convert_data(input_state_dict, output_state_dict, tensor_parallel_config: Co
 
 
 def convert_names(state_dict, tensor_parallel_config: Config):
-    patterns = tuple(
-        regex.pattern
-        for regex in chain(tensor_parallel_config.input_rules.keys(), tensor_parallel_config.output_rules.keys())
-    )
-    patterns = set(pattern[:-1] + "\." if pattern.endswith("$") else pattern for pattern in patterns)
-    patterns = [re.compile(pattern) for pattern in patterns]
-
-    name_replacements = {name: name for name in state_dict.keys()}
-    for pattern in patterns:
-        for initial_name, old_name in name_replacements.items():
-            match = pattern.search(old_name)
-            if match is not None:
-                end_pos = match.span()[1]
-                new_name = old_name[:end_pos] + "tp_wrapped_module." + old_name[end_pos:]
-                name_replacements[initial_name] = new_name
+    name_replacements = get_parameter_name_mapping(state_dict.keys(), tensor_parallel_config)
 
     for initial_name, final_name in name_replacements.items():
         state_dict[final_name] = state_dict.pop(initial_name)
