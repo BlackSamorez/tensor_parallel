@@ -5,15 +5,12 @@ from transformers import AutoConfig, AutoModel
 
 from tensor_parallel import (
     Config,
-    Sharded,
     TensorParallel,
     TensorParallelPreTrainedModel,
     convert_state_dict,
     infer_sharded_device_map,
     save_tensor_parallel,
-    tensor_parallel,
 )
-from tensor_parallel.pretrained_model import find_predefined_tensor_parallel_config
 
 PATH_TO_SAVE = "/tmp/"
 
@@ -23,9 +20,7 @@ PATH_TO_SAVE = "/tmp/"
 def test_no_parallelism_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     model_state_dict = model.state_dict()
-    model_tp = Sharded(
-        TensorParallel(model, devices, tensor_parallel_config=Config({}, {}, {}, {}))
-    )  # zero-3 sharding only
+    model_tp = TensorParallel(model, devices, tensor_parallel_config=Config({}, {}, {}, {}), use_zero3=True)  # zero-3 sharding only
     del model
     with save_tensor_parallel(model_tp):
         model_tp_state_dict = model_tp.state_dict()
@@ -47,7 +42,7 @@ def test_no_parallelism_zero_3(devices, model_name):
 def test_parallelism_no_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     model_state_dict = model.state_dict()
-    model_tp = TensorParallelPreTrainedModel(model, devices)
+    model_tp = TensorParallelPreTrainedModel(model, devices, use_zero3=False)
     del model
     with save_tensor_parallel(model_tp):
         model_tp_state_dict = model_tp.state_dict()
@@ -69,7 +64,7 @@ def test_parallelism_no_zero_3(devices, model_name):
 def test_parallelism_zero_3(devices, model_name):
     model = AutoModel.from_pretrained(model_name).to(devices[0]).half()
     model_state_dict = model.state_dict()
-    model_tp = tensor_parallel(model, devices, sharded=True)
+    model_tp = TensorParallelPreTrainedModel(model, devices, use_zero3=True)
     del model
     with save_tensor_parallel(model_tp):
         model_tp_state_dict = model_tp.state_dict()
@@ -103,14 +98,9 @@ def test_save_keep_shards(devices, model_name, shard_as_pretrained):
 
 def get_tensor_parallel(model: torch.nn.Module, devices, pretrained: bool, zero3: bool):
     if pretrained:
-        model_tp = TensorParallelPreTrainedModel(model, devices)
-        if zero3:
-            model_tp.wrapped_model = Sharded(model_tp.wrapped_model)
+        return TensorParallelPreTrainedModel(model, devices, use_zero3=zero3)
     else:
-        model_tp = TensorParallel(model, devices)
-        if zero3:
-            model_tp = Sharded(model_tp)
-    return model_tp
+        return TensorParallel(model, devices, use_zero3=zero3)
 
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])

@@ -4,35 +4,29 @@ Utility functions for training original model parameters
 import functools
 import logging
 import os
-from collections import OrderedDict
-from operator import attrgetter
-from typing import Collection, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Collection, Dict, List, Optional, Sequence, Tuple
 
 import torch
 from torch import nn
 
-from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE, get_parameter_name_mapping
+from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE
 from tensor_parallel.cross_device_ops import all_gather
-from tensor_parallel.tensor_parallel import TensorParallel
 
 logger = logging.getLogger(__file__)
 
 
-class Sharded(nn.ModuleList):
+class Sharded(nn.Module):
     def __init__(
         self,
-        module: TensorParallel,
+        module,
+        world_size: int,
         replicated_param_names: Optional[Collection[str]] = None,
-        ranks: Optional[Sequence[int]] = None,
-        world_size: Optional[int] = None,
     ):
         """
         Wrap a TensorParallel module and partition the specified param_names between shards so that every parameter
         value is only present on a single device.
         """
         super().__init__()
-        assert isinstance(module, TensorParallel), "expected TensorParallel module"
-        self.module = module
 
         module_shards = module.module_shards
         if len(module_shards) == 1:
@@ -51,15 +45,13 @@ class Sharded(nn.ModuleList):
             logger.warning("Did not find any parameters to shard")
             return
 
-        self.ranks = ranks = tuple(ranks if ranks is not None else range(len(module_shards)))
-        assert ranks == tuple(sorted(ranks)), "ranks (and module shards) must be ordered from lowest to highest rank"
         self.world_size = world_size = world_size if world_size is not None else len(module_shards)
         sharded_param_names_set = set(replicated_param_names)
         all_param_shapes = {
             name: param.shape for name, param in module_shards[0].named_parameters() if name in sharded_param_names_set
         }
         self._sharded_param_shapes = [all_param_shapes[name] for name in replicated_param_names]
-        flat_shards, shard_sizes_with_pad = _make_flat_shards(replicated_param_names, module_shards, ranks, world_size)
+        flat_shards, shard_sizes_with_pad = _make_flat_shards(replicated_param_names, module_shards, world_size)
         self.flat_shards = nn.ParameterList(list(map(nn.Parameter, flat_shards)))
         self._shard_sizes_with_pad = shard_sizes_with_pad
 
@@ -74,36 +66,17 @@ class Sharded(nn.ModuleList):
                     setattr(submodule, param_name, None)
         self._last_versions = None  # to be updated during first forward
 
-    @property
-    def devices(self):
-        return self.module.devices
+        self.preserve_shards_when_saving: bool = True
 
-    @property
-    def tensor_parallel_config(self):
-        return self.module.tensor_parallel_config
-
-    @property
-    def preserve_shards_when_saving(self):
-        return self.module.preserve_shards_when_saving
-
-    @preserve_shards_when_saving.setter
-    def preserve_shards_when_saving(self, value):
-        self.module.preserve_shards_when_saving = value
-
-    def forward(self, *args, **kwargs):
-        if len(self.module.module_shards) > 1 and len(self.sharded_param_names) > 0:
-            self._maybe_fill_sharded_params()
-        return self.module(*args, **kwargs)
-
-    def _maybe_fill_sharded_params(self):
+    def synchronize_weights(self, all_cuda: bool):
         shard_versions = tuple(flat_shard._version for flat_shard in self.flat_shards)
         if shard_versions == self._last_versions:
             logger.debug("Using previously gathered parameters")
             return  # parameters did not change since last all-gather; keep old versions
 
         logger.debug("Gathering sharded parameters")
-        gathered_shards = all_gather(list(self.flat_shards), all_cuda=self.module.all_cuda)
-        for rank, flat_shards, param_occurences in zip(self.ranks, gathered_shards, self.param_occurences_by_rank):
+        gathered_shards = all_gather(list(self.flat_shards), all_cuda=all_cuda)
+        for flat_shards, param_occurences in zip(gathered_shards, self.param_occurences_by_rank):
             combined_params = _combine_shards(flat_shards, self._shard_sizes_with_pad, self._sharded_param_shapes)
             assert len(combined_params) == len(param_occurences)
             for new_value, occurences in zip(combined_params, param_occurences):
@@ -111,33 +84,11 @@ class Sharded(nn.ModuleList):
                     setattr(submodule, param_name, new_value)
         self._last_versions = tuple(flat_shard._version for flat_shard in self.flat_shards)
 
-    def state_dict(self, destination=None, prefix="", keep_vars=False):
-        if self.module.preserve_shards_when_saving:
-            return super().state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
-        if destination is None:
-            destination = OrderedDict()
-            destination._metadata = OrderedDict()
-
-        local_metadata = dict(version=self._version)
-        if hasattr(destination, "_metadata"):
-            destination._metadata[prefix[:-1]] = local_metadata
-
-        self._maybe_fill_sharded_params()
-
-        for name in self.sharded_param_names:
-            for shard in self.module.module_shards:
-                try:
-                    destination[prefix + name] = attrgetter(name)(shard)
-                    break
-                except KeyError:
-                    pass
-
-        state_dict = self.module.state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
-        return state_dict
-
-    @property
-    def module_shards(self):
-        return self.module.module_shards
+    def state_dict(self, *args, **kwargs):
+        if self.preserve_shards_when_saving:
+            return super().state_dict(*args, **kwargs)
+        else:
+            return kwargs["destination"]
 
 
 @torch.no_grad()
@@ -184,24 +135,24 @@ def _find_all_occurences(model: nn.Module, param_names: Sequence[str]) -> Sequen
 
 @torch.no_grad()
 def _make_flat_shards(
-    sharded_param_names: Sequence[str], module_shards: Sequence[nn.Module], ranks: Sequence[int], world_size: int
+    sharded_param_names: Sequence[str], module_shards: Sequence[nn.Module], world_size: int
 ) -> Tuple[List[torch.Tensor], List[List[int]]]:
     """Create 1d buffers containing all parameter shards for each rank, return buffers and the original shard sizes"""
     extracted_shards = {
-        rank: _extract_param_shards(shard, sharded_param_names, rank=rank, world_size=world_size)
-        for rank, shard in zip(ranks, module_shards)
+        i: _extract_param_shards(shard, sharded_param_names, rank=i, world_size=world_size)
+        for i, shard in enumerate(module_shards)
     }
     shard_sizes = {rank: [shard.numel() for shard in shards] for rank, shards in extracted_shards.items()}
     shard_totals = {rank: sum(numel) for rank, numel in shard_sizes.items()}
     max_size = max(shard_totals.values())
     paddings = {rank: max_size - shard_size for rank, shard_size in shard_totals.items()}
-    shard_sizes_with_pad = [shard_sizes[rank] + [paddings[rank]] for rank in ranks]
+    shard_sizes_with_pad = [shard_sizes[i] + [paddings[i]] for i in range(len(module_shards))]
 
     padding_tensors = {
         rank: torch.zeros(paddings[rank], device=shards[0].device, dtype=shards[0].dtype)
         for rank, shards in extracted_shards.items()
     }
-    flat_shards = [torch.cat(extracted_shards[rank] + [padding_tensors[rank]]) for rank in ranks]
+    flat_shards = [torch.cat(extracted_shards[i] + [padding_tensors[i]]) for i in range(len(module_shards))]
     assert len(set(len(flat_shard) for flat_shard in flat_shards)) == 1
     return flat_shards, shard_sizes_with_pad
 

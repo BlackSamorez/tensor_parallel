@@ -6,13 +6,12 @@ import torch
 
 from tensor_parallel.config import get_parameter_name_mapping
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
-from tensor_parallel.sharding import Sharded
 from tensor_parallel.tensor_parallel import Config, TensorParallel
 from tensor_parallel.utils import find_tied_weight_aliases
 
 
 @contextmanager
-def save_tensor_parallel(model: Union[TensorParallel, TensorParallelPreTrainedModel, Sharded]):
+def save_tensor_parallel(model: Union[TensorParallel, TensorParallelPreTrainedModel]):
     """Enables state_dict reconstruction for tensor_parallel models.
     With it '.state_dict()' produces a state dict that can be loaded into an underlying model.
     Example:
@@ -24,13 +23,13 @@ def save_tensor_parallel(model: Union[TensorParallel, TensorParallelPreTrainedMo
     ```
 
     Args:
-        model (Union[TensorParallel, TensorParallelPreTrainedModel, Sharded]): tensor_parallel model
+        model (Union[TensorParallel, TensorParallelPreTrainedModel]): tensor_parallel model
     """
-    model.preserve_shards_when_saving = False
+    model.set_preserve_shards_when_saving(False)
     try:
         yield
     finally:
-        model.preserve_shards_when_saving = True
+        model.set_preserve_shards_when_saving(True)
 
 
 def infer_sharded_data_device_id(name: str):

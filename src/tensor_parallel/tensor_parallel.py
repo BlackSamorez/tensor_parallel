@@ -4,7 +4,8 @@ The main TensorParallel module wrapper
 import logging
 import threading
 from contextlib import nullcontext
-from typing import Any, Optional, Sequence, Union
+from operator import attrgetter
+from typing import Any, Collection, Optional, Sequence, Union
 
 import torch
 from torch import nn
@@ -17,6 +18,7 @@ from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE, Config, add_lora_
 from tensor_parallel.cross_device_ops import broadcast_coalesced
 from tensor_parallel.shard import make_shard
 from tensor_parallel.utils import nested_flatten, nested_pack
+from tensor_parallel.zero3 import Sharded
 
 logger = logging.getLogger(__file__)
 
@@ -31,6 +33,8 @@ class TensorParallel(nn.Module):
         tensor_parallel_config: Optional[Config] = None,
         delay_init: bool = False,
         distributed: bool = True,
+        use_zero3: bool = True,
+        replicated_param_names: Optional[Collection[str]] = None,
     ):
         super().__init__()
         original_params = sum(p.numel() for p in module.parameters())
@@ -99,6 +103,12 @@ class TensorParallel(nn.Module):
         )
         self.preserve_shards_when_saving: bool = True
 
+        # ZeRO-3
+        if use_zero3:
+            self.zero3 = Sharded(self, len(self.devices), replicated_param_names)
+        else:
+            self.zero3 = None
+
     def prepare_args_kwargs_for_forward(self, *args, **kwargs):
         args_and_kwargs = (args, kwargs)
         flat_tensors = [obj for obj in nested_flatten(args_and_kwargs) if isinstance(obj, torch.Tensor)]
@@ -123,6 +133,10 @@ class TensorParallel(nn.Module):
                 shard.to(device)
             self.need_delayed_init = False
 
+        # Synchronize replicated parameters
+        if self.zero3 is not None:
+            self.zero3.synchronize_weights(self.all_cuda)
+
         if len(self.module_shards) <= 1:
             return [self.module_shards[0](*args, **kwargs)][self.output_device_index]
 
@@ -137,8 +151,14 @@ class TensorParallel(nn.Module):
         else:
             return parallel_apply_simple(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
 
+    def set_preserve_shards_when_saving(self, value: bool):
+        self.preserve_shards_when_saving = value
+        if self.zero3 is not None:
+            self.zero3.preserve_shards_when_saving = value
+
     def state_dict(self, *args, **kwargs):
         state_dict = super().state_dict(*args, **kwargs)
+
         if self.preserve_shards_when_saving:
             return state_dict
 
@@ -156,7 +176,9 @@ class TensorParallel(nn.Module):
         try:
             shards_prefix = next(name for name, _ in state_dict.items() if "module_shards." in name)
         except StopIteration:
-            return state_dict  # no parameters are actually tensor parallel
+            return self.process_zero3_state_dict(
+                state_dict, kwargs.get("prefix", "")
+            )  # no parameters are actually tensor parallel
         shards_prefix = shards_prefix[: shards_prefix.find("module_shards.") + len("module_shards.")]
         module_prefix = shards_prefix[: -len("module_shards.")]
 
@@ -186,7 +208,21 @@ class TensorParallel(nn.Module):
                 for i in range(len(self.module_shards)):
                     del state_dict[f"{shards_prefix}{i}.{unsharded_name}"]
 
-        return state_dict
+        # processing ZeRO-3
+        return self.process_zero3_state_dict(state_dict, kwargs.get("prefix", ""))
+
+    def process_zero3_state_dict(self, destination, prefix):
+        if self.zero3 is not None:
+            self.zero3.synchronize_weights(self.all_cuda)
+            for name in self.zero3.sharded_param_names:
+                for shard in self.module_shards:
+                    try:
+                        destination[prefix + name] = attrgetter(name)(shard)
+                        break
+                    except KeyError:
+                        pass
+
+        return destination
 
 
 def parallel_apply_simple(

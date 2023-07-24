@@ -11,7 +11,6 @@ from transformers import PretrainedConfig, PreTrainedModel
 
 from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE, Config
 from tensor_parallel.per_device_tensors import PerDeviceTensors
-from tensor_parallel.sharding import Sharded
 from tensor_parallel.slicing_configs import PREDEFINED_CONFIGS
 from tensor_parallel.tensor_parallel import TensorParallel, check_device_ids, parallel_apply, parallel_apply_simple
 from tensor_parallel.utils import nested_map
@@ -43,7 +42,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
         output_device: Optional[torch.device] = None,
         output_device_index: Optional[int] = None,
         tensor_parallel_config: Optional[Config] = None,
-        distributed: bool = True,
+        **kwargs,
     ):
         super().__init__(module.config)  # Temporary empty config. Gets replaced in from_pretrained
 
@@ -56,7 +55,7 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
             tensor_parallel_config = find_predefined_tensor_parallel_config(module.config, device_ids)
 
         self.wrapped_model = TensorParallel(
-            module, device_ids, output_device, output_device_index, tensor_parallel_config, distributed=distributed
+            module, device_ids, output_device, output_device_index, tensor_parallel_config, **kwargs
         )
 
     @property
@@ -67,13 +66,8 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
     def tensor_parallel_config(self):
         return self.wrapped_model.tensor_parallel_config
 
-    @property
-    def preserve_shards_when_saving(self):
-        return self.wrapped_model.preserve_shards_when_saving
-
-    @preserve_shards_when_saving.setter
-    def preserve_shards_when_saving(self, value):
-        self.wrapped_model.preserve_shards_when_saving = value
+    def set_preserve_shards_when_saving(self, value: bool):
+        self.wrapped_model.set_preserve_shards_when_saving(value)
 
     def forward(self, *args, **kwargs):
         return self.wrapped_model(*args, **kwargs)
@@ -120,70 +114,29 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
             encoder_decoder_shard.get_encoder() for encoder_decoder_shard in self.wrapped_model.module_shards
         ]
 
-        encoder_wrapper_class = None
-        if isinstance(self.wrapped_model, TensorParallel):
+        class _EncoderWrapper(torch.nn.Module):
+            def __init__(self, wrapped_pretrained_model: TensorParallelPreTrainedModel) -> None:
+                super().__init__()
+                self.wrapped_pretrained_model = wrapped_pretrained_model
 
-            class _EncoderWrapper(torch.nn.Module):
-                def __init__(self, wrapped_pretrained_model: TensorParallelPreTrainedModel) -> None:
-                    super().__init__()
-                    self.wrapped_pretrained_model = wrapped_pretrained_model
-
-                def forward(self, *args, **kwargs):
-                    (
+            def forward(self, *args, **kwargs):
+                (
+                    inputs,
+                    kwargs_tup,
+                ) = self.wrapped_pretrained_model.wrapped_model.prepare_args_kwargs_for_forward(*args, **kwargs)
+                if self.wrapped_pretrained_model.wrapped_model.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
+                    return parallel_apply(
+                        encoder_shards,
                         inputs,
                         kwargs_tup,
-                    ) = self.wrapped_pretrained_model.wrapped_model.prepare_args_kwargs_for_forward(*args, **kwargs)
-                    if self.wrapped_pretrained_model.wrapped_model.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
-                        return parallel_apply(
-                            encoder_shards,
-                            inputs,
-                            kwargs_tup,
-                            self.wrapped_pretrained_model.wrapped_model.devices,
-                        )[self.wrapped_pretrained_model.wrapped_model.output_device_index]
-                    else:
-                        return parallel_apply_simple(
-                            encoder_shards,
-                            inputs,
-                            kwargs_tup,
-                            self.wrapped_pretrained_model.wrapped_model.devices,
-                        )[self.wrapped_pretrained_model.wrapped_model.output_device_index]
-
-            encoder_wrapper_class = _EncoderWrapper
-
-        elif isinstance(self.wrapped_model, Sharded):
-
-            class _EncoderWrapper(torch.nn.Module):
-                def __init__(self, wrapped_pretrained_model: TensorParallelPreTrainedModel) -> None:
-                    super().__init__()
-                    self.wrapped_pretrained_model = wrapped_pretrained_model
-
-                def forward(self, *args, **kwargs):
-                    if (
-                        len(self.wrapped_pretrained_model.wrapped_model.module.module_shards) > 1
-                        and len(self.wrapped_pretrained_model.wrapped_model.sharded_param_names) > 0
-                    ):
-                        self.wrapped_pretrained_model.wrapped_model._maybe_fill_sharded_params()
-                    (
+                        self.wrapped_pretrained_model.wrapped_model.devices,
+                    )[self.wrapped_pretrained_model.wrapped_model.output_device_index]
+                else:
+                    return parallel_apply_simple(
+                        encoder_shards,
                         inputs,
                         kwargs_tup,
-                    ) = self.wrapped_pretrained_model.wrapped_model.module.prepare_args_kwargs_for_forward(
-                        *args, **kwargs
-                    )
-                    if self.wrapped_pretrained_model.wrapped_model.module.all_cuda and not TENSOR_PARALLEL_USE_NATIVE:
-                        return parallel_apply(
-                            encoder_shards,
-                            inputs,
-                            kwargs_tup,
-                            self.wrapped_pretrained_model.wrapped_model.module.devices,
-                        )[self.wrapped_pretrained_model.wrapped_model.module.output_device_index]
-                    else:
-                        return parallel_apply_simple(
-                            encoder_shards,
-                            inputs,
-                            kwargs_tup,
-                            self.wrapped_pretrained_model.wrapped_model.module.devices,
-                        )[self.wrapped_pretrained_model.wrapped_model.module.output_device_index]
+                        self.wrapped_pretrained_model.wrapped_model.devices,
+                    )[self.wrapped_pretrained_model.wrapped_model.output_device_index]
 
-            encoder_wrapper_class = _EncoderWrapper
-
-        return encoder_wrapper_class(self)
+        return _EncoderWrapper(self)
