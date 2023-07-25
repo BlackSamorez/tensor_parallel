@@ -57,6 +57,7 @@ class TensorParallel(nn.Module):
         self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
         self.need_delayed_init = delay_init
         world_size = len(self.devices)
+        self.zero3 = None
 
         if len(device_ids) <= 1:
             self.module_shards.append(module)
@@ -105,9 +106,18 @@ class TensorParallel(nn.Module):
 
         # ZeRO-3
         if use_zero3:
-            self.zero3 = Sharded(self, len(self.devices), replicated_param_names)
+            self.apply_zero3(replicated_param_names)
+
+    def apply_zero3(
+        self,
+        replicated_param_names: Optional[Collection[str]] = None,
+    ):
+        if self.zero3 is not None:
+            raise Exception(
+                "Trying to apply ZeRO-3 for the second time. If you wish not to apply ZeRO-3 during model initialization, pass `use_zero3=False`."
+            )
         else:
-            self.zero3 = None
+            self.zero3 = Sharded(self, len(self.devices), replicated_param_names)
 
     def prepare_args_kwargs_for_forward(self, *args, **kwargs):
         args_and_kwargs = (args, kwargs)

@@ -27,6 +27,7 @@ class Sharded(nn.Module):
         value is only present on a single device.
         """
         super().__init__()
+        self.preserve_shards_when_saving: bool = True
 
         module_shards = module.module_shards
         if len(module_shards) == 1:
@@ -65,8 +66,6 @@ class Sharded(nn.Module):
                     submodule._parameters.pop(param_name, None)
                     setattr(submodule, param_name, None)
         self._last_versions = None  # to be updated during first forward
-
-        self.preserve_shards_when_saving: bool = True
 
     def synchronize_weights(self, all_cuda: bool):
         shard_versions = tuple(flat_shard._version for flat_shard in self.flat_shards)
