@@ -44,7 +44,8 @@ def tensor_parallel(
     :param sharded: if True, any non-tensor-parallel parameters (e.g. layernorm weight) will still be sharded,
        and manually re-assembled for each forward. This is equivalent to pytorch FullyShardedDataParallel
     :param sharded_param_names: if sharded=True, this is a list of all parameter names (strings) that ZeRO-3 applies to;
-       by default, ZeRO-3 applies to all parameters that are not split with tensor parallelism and are trainable.
+       by default, ZeRO-3 applies to all parameters that are not split with tensor parallelism.
+    :note: the default sharded_param_names are formed of parameters that are equal between shards after TP is applied
     :param kwargs: additional keyword arguments passed to TensorParallel init
 
     """
