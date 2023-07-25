@@ -17,7 +17,8 @@ def test_factory_nn_module(sharded):
 
     assert isinstance(model, nn.Module)
     model = tensor_parallel(model, device_ids=["cpu", "cpu"], sharded=sharded)
-    assert isinstance(model, TensorParallel) if not sharded else isinstance(model.module, TensorParallel)
+    assert isinstance(model, TensorParallel)
+    assert (model.zero3 is None) != sharded
 
 
 def test_factory_pretrainedmodel():

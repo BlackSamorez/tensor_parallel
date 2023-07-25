@@ -19,11 +19,13 @@ def tensor_parallel(
     device_ids: Optional[Sequence[Union[torch.device, str]]] = None,
     tensor_parallel_config: Optional[Config] = None,
     distributed: Optional[bool] = None,
-    use_zero3: Optional[bool] = None,
-    replicated_param_names: Optional[Collection[str]] = None,
+    sharded: Optional[bool] = None,
+    sharded_param_names: Optional[Collection[str]] = None,
     **kwargs,
 ) -> nn.Module:
     """
+    !!! This function is deprecated and will be deleted in subsequent releases!!!
+
     Wrap an existing PyTorch module with tensor parallelism. Return equivalent tensor-parallel module.
 
     :example:
@@ -39,20 +41,17 @@ def tensor_parallel(
     :param tensor_parallel_config: custom tensor_parallel.Config to describe how the model is parallelized. defaults to auto config
     :param distributed: if True, use torch.distributed instead of threading. Assumes that we is running in torchrun
        defaults to True if torch.distributed.is_initialized, else False
-    :param use_zero3: if True, any non-tensor-parallel parameters (e.g. layernorm weight) will still be sharded,
+    :param sharded: if True, any non-tensor-parallel parameters (e.g. layernorm weight) will still be sharded,
        and manually re-assembled for each forward. This is equivalent to pytorch FullyShardedDataParallel
-    :param replicated_param_names: if sharded=True, this is a list of all parameter names (strings) that ZeRO-3 applies to;
+    :param sharded_param_names: if sharded=True, this is a list of all parameter names (strings) that ZeRO-3 applies to;
        by default, ZeRO-3 applies to all parameters that are not split with tensor parallelism and are trainable.
     :param kwargs: additional keyword arguments passed to TensorParallel init
 
     """
-    if "sharded_param_names" in kwargs:
-        replicated_param_names = kwargs["sharded_param_names"]
-        logger.warning(
-            f"`sharded_param_names` argument has been renamed to `replicated_param_names`. Please use the latter since the former will be deprecated."
-        )
+    logger.warning(
+        f"`tensor_parallel` is deprecated. Please use `TensorParallel`, `TensorParallelPreTrainedModel` or `make_distributed_shard`  accordingly"
+    )
 
-    num_trainable_parameters = sum(p.numel() for p in module.parameters() if p.requires_grad)
     distributed = distributed if distributed is not None else torch.distributed.is_initialized()
 
     if distributed:
@@ -69,8 +68,8 @@ def tensor_parallel(
                 device_ids=device_ids,
                 tensor_parallel_config=tensor_parallel_config,
                 distributed=distributed,
-                use_zero3=use_zero3,
-                replicated_param_names=replicated_param_names,
+                use_zero3=sharded,
+                replicated_param_names=sharded_param_names,
                 **kwargs,
             )
         else:
@@ -79,7 +78,7 @@ def tensor_parallel(
                 device_ids=device_ids,
                 tensor_parallel_config=tensor_parallel_config,
                 distributed=distributed,
-                use_zero3=use_zero3,
-                replicated_param_names=replicated_param_names,
+                use_zero3=sharded,
+                replicated_param_names=sharded_param_names,
                 **kwargs,
             )
