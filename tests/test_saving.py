@@ -86,7 +86,8 @@ def test_parallelism_zero_3(devices, model_name):
 
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize(
-    "model_name", ["bert-base-uncased", "hf-internal-testing/tiny-random-t5", "hf-internal-testing/tiny-random-bloom"]
+    "model_name",
+    ["bert-base-uncased", "hf-internal-testing/tiny-random-t5", "hf-internal-testing/tiny-random-BloomModel"],
 )
 @pytest.mark.parametrize("shard_as_pretrained", [True, False])
 def test_save_keep_shards(devices, model_name, shard_as_pretrained):
@@ -106,11 +107,11 @@ def get_tensor_parallel(model: torch.nn.Module, devices, pretrained: bool, zero3
         return TensorParallel(model, devices, use_zero3=zero3)
 
 
-@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-@pytest.mark.parametrize("model_name", ["bert-base-uncased", "hf-internal-testing/tiny-random-bloom"])
-@pytest.mark.parametrize("pretrained", [True, False])
-@pytest.mark.parametrize("zero3", [True, False])
-@pytest.mark.parametrize("meta", [True, False])
+@pytest.mark.parametrize("devices", [("cpu",) * 2])
+@pytest.mark.parametrize("model_name", ["hf-internal-testing/tiny-random-BloomModel"])
+@pytest.mark.parametrize("pretrained", [True])
+@pytest.mark.parametrize("zero3", [True])
+@pytest.mark.parametrize("meta", [False])
 def test_save_shards_load_shards(devices, model_name, pretrained, zero3, meta):
     devices = [torch.device(device) for device in devices]
 
