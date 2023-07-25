@@ -7,7 +7,7 @@ import transformers
 from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, BertModel, T5ForConditionalGeneration
 
-from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel, tensor_parallel
+from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel
 from tensor_parallel.pretrained_model import find_predefined_tensor_parallel_config
 
 
@@ -217,8 +217,9 @@ def test_forward_bert_like(use_lora, use_config, devices, model_name):
         "BlackSamorez/falcon-40b-tiny-testing",
     ],
 )
+@pytest.mark.parametrize("use_zero3", [True, False])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-def test_generate(generate_kwargs, model_name, devices):
+def test_generate(generate_kwargs, model_name, use_zero3, devices):
     torch.manual_seed(0)
 
     if model_name == "BlackSamorez/falcon-40b-tiny-testing" and torch.__version__ < "2.0":
@@ -266,7 +267,7 @@ def test_generate(generate_kwargs, model_name, devices):
 
     scores_ref = _generate_scores(model, input_ids, generate_kwargs)
 
-    model_tp = tensor_parallel(model, devices)
+    model_tp = TensorParallelPreTrainedModel(model, devices, use_zero3=use_zero3)
     del model
 
     scores = _generate_scores(model_tp, input_ids, generate_kwargs)
@@ -276,11 +277,11 @@ def test_generate(generate_kwargs, model_name, devices):
 
 @pytest.mark.parametrize("use_predefined_config", [False, True])
 @pytest.mark.parametrize("model_name", ["t5-small"])
-@pytest.mark.parametrize("sharded", [False, True])
-def test_encoder(use_predefined_config, model_name, sharded):
+@pytest.mark.parametrize("use_zero3", [False, True])
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
+def test_encoder(use_predefined_config, model_name, use_zero3, devices):
     torch.manual_seed(0)
 
-    devices = ["cpu"] * 2
     model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
 
     inp1 = torch.randint(1, 1000, size=(2, 3), device=devices[0])
@@ -291,7 +292,7 @@ def test_encoder(use_predefined_config, model_name, sharded):
 
     if not use_predefined_config:
         model.config.architectures = ["Pretend we don't know this architecture"]
-    model_tp = tensor_parallel(model, devices, sharded=sharded)
+    model_tp = TensorParallelPreTrainedModel(model, devices, use_zero3=use_zero3)
     assert isinstance(model_tp, TensorParallelPreTrainedModel)
     del model
 
