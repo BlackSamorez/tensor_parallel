@@ -7,7 +7,7 @@ import transformers
 from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, BertModel, T5ForConditionalGeneration
 
-from tensor_parallel import TensorParallel, TensorParallelPreTrainedModel
+from tensor_parallel import TensorParallelPreTrainedModel
 from tensor_parallel.pretrained_model import find_predefined_tensor_parallel_config
 
 
@@ -90,7 +90,6 @@ def prepare_model(model_name, use_lora):
 
 
 @pytest.mark.parametrize("use_lora", [False, True])
-@pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("use_zero3", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize(
@@ -105,7 +104,7 @@ def prepare_model(model_name, use_lora):
         "BlackSamorez/falcon-40b-tiny-testing",
     ],
 )
-def test_forward_gpt2_like(use_lora, use_config, use_zero3, devices, model_name):
+def test_forward_gpt2_like(use_lora, use_zero3, devices, model_name):
     torch.manual_seed(0)
 
     model = prepare_model(model_name, use_lora).to(devices[0])
@@ -118,10 +117,7 @@ def test_forward_gpt2_like(use_lora, use_config, use_zero3, devices, model_name)
     out2_ref = model(inp2, use_cache=True, past_key_values=out1_ref.past_key_values)
     out3_ref = model(inp3, use_cache=True, past_key_values=out2_ref.past_key_values)
 
-    tp_config = None
-    if use_config:
-        tp_config = find_predefined_tensor_parallel_config(model.config, devices)
-    model_tp = TensorParallel(model, devices, tensor_parallel_config=tp_config, use_zero3=use_zero3)
+    model_tp = TensorParallelPreTrainedModel(model, devices, use_zero3=use_zero3)
     del model
 
     out1 = model_tp(inp1, use_cache=True, output_hidden_states=True)
@@ -135,11 +131,10 @@ def test_forward_gpt2_like(use_lora, use_config, use_zero3, devices, model_name)
 
 
 @pytest.mark.parametrize("use_lora", [False, True])
-@pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("use_zero3", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["t5-small"])
-def test_forward_t5_like(use_lora, use_config, use_zero3, devices, model_name):
+def test_forward_t5_like(use_lora, use_zero3, devices, model_name):
     torch.manual_seed(0)
 
     model = T5ForConditionalGeneration.from_pretrained(model_name).to(devices[0])
@@ -155,10 +150,7 @@ def test_forward_t5_like(use_lora, use_config, use_zero3, devices, model_name):
     out2_ref = model(enc, decoder_input_ids=dec2, use_cache=True, past_key_values=out1_ref.past_key_values)
     out3_ref = model(enc, decoder_input_ids=dec3, use_cache=True, past_key_values=out2_ref.past_key_values)
 
-    tp_config = None
-    if use_config:
-        tp_config = find_predefined_tensor_parallel_config(model.config, devices)
-    model_tp = TensorParallel(model, devices, tensor_parallel_config=tp_config, use_zero3=use_zero3)
+    model_tp = TensorParallelPreTrainedModel(model, devices, use_zero3=use_zero3)
     del model
 
     out1 = model_tp(enc, decoder_input_ids=dec1, use_cache=True, output_hidden_states=True)
@@ -174,11 +166,10 @@ def test_forward_t5_like(use_lora, use_config, use_zero3, devices, model_name):
 
 
 @pytest.mark.parametrize("use_lora", [False, True])
-@pytest.mark.parametrize("use_config", [False, True])
 @pytest.mark.parametrize("use_zero3", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
-def test_forward_bert_like(use_lora, use_config, use_zero3, devices, model_name):
+def test_forward_bert_like(use_lora, use_zero3, devices, model_name):
     torch.manual_seed(0)
 
     model = BertModel.from_pretrained(model_name).to(devices[0])
@@ -193,10 +184,7 @@ def test_forward_bert_like(use_lora, use_config, use_zero3, devices, model_name)
     out2_ref = model(inp2, output_hidden_states=True)
     out3_ref = model(inp3, output_hidden_states=True)
 
-    tp_config = None
-    if use_config:
-        tp_config = find_predefined_tensor_parallel_config(model.config, devices)
-    model_tp = TensorParallel(model, devices, tensor_parallel_config=tp_config, use_zero3=use_zero3)
+    model_tp = TensorParallelPreTrainedModel(model, devices, use_zero3=use_zero3)
     del model
 
     out1 = model_tp(inp1, output_hidden_states=True)
@@ -252,9 +240,7 @@ def test_generate(generate_kwargs, model_name, use_zero3, devices):
 
     try:
         if model_name == "t5-small":
-            model = (
-                T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).to(devices[0])
-            )
+            model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).to(devices[0])
         else:
             model = (
                 transformers.AutoModelForCausalLM.from_pretrained(
