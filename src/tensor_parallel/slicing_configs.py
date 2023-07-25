@@ -8,7 +8,7 @@ NB: some of these configs get fairly complicated in order to squeeze a bit of ex
 from functools import partial
 from itertools import chain
 from typing import Callable, Dict, Sequence
-
+import re
 import torch
 from transformers import BertConfig, BloomConfig, CodeGenConfig, GPT2Config, GPTNeoXConfig, PretrainedConfig, T5Config
 
@@ -397,8 +397,8 @@ def get_llama_config(model_config: PretrainedConfig, devices: Sequence[torch.dev
         },
     )
 
-    if new_modeling:
-        config.attr_rules[r".*self_attn$"]["num_key_value_heads"] = partial(split_num_heads, world_size=world_size)
+    if new_modeling:        
+        config.attr_rules[re.compile('.*self_attn$')]["num_key_value_heads"] = partial(split_num_heads, world_size=world_size)
 
     return config
 
