@@ -18,7 +18,7 @@ from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE, Config, add_lora_
 from tensor_parallel.cross_device_ops import broadcast_coalesced
 from tensor_parallel.shard import make_shard
 from tensor_parallel.utils import nested_flatten, nested_pack
-from tensor_parallel.zero3 import Sharded
+from tensor_parallel.zero3 import Zero3
 
 logger = logging.getLogger(__file__)
 
@@ -117,7 +117,7 @@ class TensorParallel(nn.Module):
                 "Trying to apply ZeRO-3 for the second time. If you wish not to apply ZeRO-3 during model initialization, pass `use_zero3=False`."
             )
         else:
-            self.zero3 = Sharded(self, len(self.devices), replicated_param_names)
+            self.zero3 = Zero3(self, len(self.devices), replicated_param_names)
 
     def prepare_args_kwargs_for_forward(self, *args, **kwargs):
         args_and_kwargs = (args, kwargs)

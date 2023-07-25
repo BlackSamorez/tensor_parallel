@@ -15,7 +15,7 @@ from tensor_parallel.cross_device_ops import all_gather
 logger = logging.getLogger(__file__)
 
 
-class Sharded(nn.Module):
+class Zero3(nn.Module):
     def __init__(
         self,
         module,
