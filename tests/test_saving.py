@@ -107,16 +107,15 @@ def get_tensor_parallel(model: torch.nn.Module, devices, pretrained: bool, zero3
         return TensorParallel(model, devices, use_zero3=zero3)
 
 
-@pytest.mark.parametrize("devices", [("cpu",) * 2])
-@pytest.mark.parametrize("model_name", ["hf-internal-testing/tiny-random-BloomModel"])
-@pytest.mark.parametrize("pretrained", [True])
-@pytest.mark.parametrize("zero3", [True])
-@pytest.mark.parametrize("meta", [False])
-def test_save_shards_load_shards(devices, model_name, pretrained, zero3, meta):
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
+@pytest.mark.parametrize("model_name", ["bert-base-uncased", "hf-internal-testing/tiny-random-BloomModel"])
+@pytest.mark.parametrize("pretrained", [True, False])
+@pytest.mark.parametrize("zero3", [True, False])
+def test_save_shards_load_shards(devices, model_name, pretrained, zero3):
     devices = [torch.device(device) for device in devices]
 
     model = AutoModel.from_pretrained(model_name).to(devices[0])
-    model_tp = get_tensor_parallel(model, devices, pretrained, zero3)
+    model_tp = get_tensor_parallel(model, devices, pretrained, zero3=zero3)
 
     if pretrained:
         half_the_model = f"{sum([p.numel() for p in model_tp.parameters()]) * 8 // 1_000_000 // 2}MB"
@@ -125,30 +124,23 @@ def test_save_shards_load_shards(devices, model_name, pretrained, zero3, meta):
         torch.save(model_tp.state_dict(), PATH_TO_SAVE + "test_save_shards_load_shards.bin")
     del model_tp
 
-    if meta:
-        if zero3:
-            pytest.skip("Can't use zero3 with meta")
-        with init_empty_weights():
-            model_tp = get_tensor_parallel(
-                AutoModel.from_config(AutoConfig.from_pretrained(model_name)), devices, pretrained, zero3
-            )
-    else:
-        model_tp = get_tensor_parallel(AutoModel.from_pretrained(model_name), devices, pretrained, zero3)
+    new_model_tp = get_tensor_parallel(AutoModel.from_pretrained(model_name), devices, pretrained, zero3=zero3)
 
     checkpoint = PATH_TO_SAVE + ("pytorch_model.bin.index.json" if pretrained else "test_save_shards_load_shards.bin")
     load_checkpoint_in_model(
-        model_tp,
+        new_model_tp,
         checkpoint=checkpoint,
-        device_map=infer_sharded_device_map(model_tp),
+        device_map=infer_sharded_device_map(new_model_tp),
     )
-    assert not "meta" in [p.device.type for p in model_tp.parameters()]
-    model_tp(torch.zeros(1, 8, dtype=int))
+    assert not "meta" in [p.device.type for p in new_model_tp.parameters()]
+    new_model_tp(torch.zeros(1, 8, dtype=int))
 
 
 @pytest.mark.parametrize("use_pretrained", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
-def test_convert_state_dict(use_pretrained, devices, model_name):
+@pytest.mark.parametrize("zero3", [True, False])
+def test_convert_state_dict(use_pretrained, devices, model_name, zero3):
     model = AutoModel.from_pretrained(model_name)
     torch.save(model.state_dict(), PATH_TO_SAVE + "test_convert_state_dict.bin")
     del model
@@ -169,5 +161,9 @@ def test_convert_state_dict(use_pretrained, devices, model_name):
 
     for param_name, param in converted_state_dict.items():
         set_module_tensor_to_device(model_tp, param_name, "cpu", value=param)
+
+    # When using meta device ZeRO-3 should only be applied after dispatch
+    if zero3:
+        model_tp.apply_zero3()
 
     model_tp(torch.zeros(1, 8, dtype=int))

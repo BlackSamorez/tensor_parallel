@@ -35,7 +35,7 @@ class Sharded(nn.Module):
         if replicated_param_names is None:
             if any([p.device.type == "meta" for p in module.parameters()]):
                 raise RuntimeError(
-                    "Trying to shard a model containing data on 'meta' device without providing 'sharded_param_names'. Consider sharding a model after loading the data for automatic sharding."
+                    "Trying to shard a model containing 'meta' parameters. Please set `use_zero3=False` during model creation and call `.apply_zero3()` only after dispatch"
                 )
 
             all_param_names = set(name for name, _ in module_shards[0].named_parameters())

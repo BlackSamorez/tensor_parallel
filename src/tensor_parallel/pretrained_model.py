@@ -69,6 +69,9 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
     def set_preserve_shards_when_saving(self, value: bool):
         self.wrapped_model.set_preserve_shards_when_saving(value)
 
+    def apply_zero3(self, *args, **kwargs):
+        self.wrapped_model.apply_zero3(*args, **kwargs)
+
     def forward(self, *args, **kwargs):
         return self.wrapped_model(*args, **kwargs)
 
