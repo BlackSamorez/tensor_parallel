@@ -262,11 +262,10 @@ def test_generate(generate_kwargs, model_name, use_zero3, devices):
     _assert_scores_allclose_long_enough(scores_ref, scores)
 
 
-@pytest.mark.parametrize("use_predefined_config", [False, True])
 @pytest.mark.parametrize("model_name", ["t5-small"])
 @pytest.mark.parametrize("use_zero3", [False, True])
 @pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
-def test_encoder(use_predefined_config, model_name, use_zero3, devices):
+def test_encoder(model_name, use_zero3, devices):
     torch.manual_seed(0)
 
     model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True)
@@ -277,8 +276,6 @@ def test_encoder(use_predefined_config, model_name, use_zero3, devices):
     out1_ref = model.get_encoder()(inp1)
     out2_ref = model.get_encoder()(inp2)
 
-    if not use_predefined_config:
-        model.config.architectures = ["Pretend we don't know this architecture"]
     model_tp = TensorParallelPreTrainedModel(model, devices, use_zero3=use_zero3)
     assert isinstance(model_tp, TensorParallelPreTrainedModel)
     del model

@@ -120,6 +120,20 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
                 self.wrapped_pretrained_model = wrapped_pretrained_model
 
             def forward(self, *args, **kwargs):
+                if self.wrapped_pretrained_model.wrapped_model.need_delayed_init:
+                    for shard, device in zip(
+                        self.wrapped_pretrained_model.wrapped_model.module_shards,
+                        self.wrapped_pretrained_model.wrapped_model.devices,
+                    ):
+                        shard.to(device)
+                    self.wrapped_pretrained_model.wrapped_model.need_delayed_init = False
+
+                # Synchronize replicated parameters
+                if self.wrapped_pretrained_model.wrapped_model.zero3 is not None:
+                    self.wrapped_pretrained_model.wrapped_model.zero3.synchronize_weights(
+                        self.wrapped_pretrained_model.wrapped_model.all_cuda
+                    )
+
                 (
                     inputs,
                     kwargs_tup,
