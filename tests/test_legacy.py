@@ -1,7 +1,7 @@
 import torch
 from transformers import BertModel, PreTrainedModel
 
-from tensor_parallel import tensor_parallel, Sharded
+from tensor_parallel import Sharded, tensor_parallel
 
 
 def test_legacy_factory_and_sharded():
