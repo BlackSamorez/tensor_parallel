@@ -5,8 +5,8 @@ import transformers
 from tensor_parallel import TensorParallel, tensor_parallel
 
 
-@pytest.mark.parametrize("sharded", [True, False])
-def test_factory_nn_module(sharded):
+@pytest.mark.parametrize("use_zero3", [True, False])
+def test_factory_nn_module(use_zero3):
     model = nn.Sequential(
         nn.Embedding(num_embeddings=1337, embedding_dim=64),
         nn.LayerNorm(64),
@@ -16,9 +16,9 @@ def test_factory_nn_module(sharded):
     )
 
     assert isinstance(model, nn.Module)
-    model = tensor_parallel(model, device_ids=["cpu", "cpu"], sharded=sharded)
+    model = tensor_parallel(model, device_ids=["cpu", "cpu"], use_zero3=use_zero3)
     assert isinstance(model, TensorParallel)
-    assert (model.zero3 is None) != sharded
+    assert (model.zero3 is None) != use_zero3
 
 
 def test_factory_pretrainedmodel():
