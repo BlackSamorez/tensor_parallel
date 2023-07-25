@@ -4,7 +4,7 @@ import os
 import re
 from functools import partial
 from itertools import chain
-from typing import Any, Callable, Dict, Iterable, Sequence, Union
+from typing import Any, Callable, Dict, Iterable, Mapping, Sequence, Union
 
 import torch
 from torch import nn
@@ -154,7 +154,7 @@ def add_lora_rules(model: nn.Module, config: Config) -> Config:
     return config
 
 
-def get_parameter_name_mapping(names: Iterable[str], tensor_parallel_config: Config) -> Iterable[str]:
+def get_parameter_name_mapping(names: Iterable[str], tensor_parallel_config: Config) -> Mapping[str, str]:
     """Maps original model's parameter names to tensor_parallel parameter names.
 
     Args:
@@ -169,15 +169,23 @@ def get_parameter_name_mapping(names: Iterable[str], tensor_parallel_config: Con
         for regex in chain(tensor_parallel_config.input_rules.keys(), tensor_parallel_config.output_rules.keys())
     )
     patterns = [pattern[:-1] if pattern.endswith("$") else pattern for pattern in patterns]
-    patterns = [pattern if pattern.endswith(".") else pattern + r"\." for pattern in patterns]
+    patterns = set(pattern if pattern.endswith(".") else pattern + r"\." for pattern in patterns)
     patterns = [re.compile(pattern) for pattern in patterns]
 
-    name_replacements = {name: name for name in names}
+    insertions = {name: [] for name in names}
     for pattern in patterns:
-        for initial_name, old_name in name_replacements.items():
-            match = pattern.search(old_name)
+        for name in names:
+            match = pattern.search(name)
             if match is not None:
                 end_pos = match.span()[1]
-                new_name = old_name[:end_pos] + "tp_wrapped_module." + old_name[end_pos:]
-                name_replacements[initial_name] = new_name
+                insertions[name].append(end_pos)
+    insertions = {name: sorted(pos) for name, pos in insertions.items()}
+
+    name_replacements = {}
+    for name in names:
+        new_name = name
+        for pos in insertions[name][::-1]:
+            new_name = new_name[:pos] + r"tp_wrapped_module." + new_name[pos:]
+        name_replacements[name] = new_name
+
     return name_replacements
