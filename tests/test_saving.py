@@ -144,8 +144,8 @@ def test_save_shards_load_shards(devices, model_name, pretrained, zero3, meta):
     model_tp(torch.zeros(1, 8, dtype=int))
 
 
-@pytest.mark.parametrize("use_pretrained", [True])
-@pytest.mark.parametrize("devices", [("cpu",) * 2])
+@pytest.mark.parametrize("use_pretrained", [False, True])
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
 @pytest.mark.parametrize("model_name", ["bert-base-uncased"])
 def test_convert_state_dict(use_pretrained, devices, model_name):
     model = AutoModel.from_pretrained(model_name)
