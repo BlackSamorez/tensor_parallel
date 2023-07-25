@@ -168,7 +168,8 @@ def get_parameter_name_mapping(names: Iterable[str], tensor_parallel_config: Con
         regex.pattern
         for regex in chain(tensor_parallel_config.input_rules.keys(), tensor_parallel_config.output_rules.keys())
     )
-    patterns = set(pattern[:-1] + "\." if pattern.endswith("$") else pattern for pattern in patterns)
+    patterns = [pattern[:-1] if pattern.endswith("$") else pattern for pattern in patterns]
+    patterns = [pattern if pattern.endswith(".") else pattern + r"\." for pattern in patterns]
     patterns = [re.compile(pattern) for pattern in patterns]
 
     name_replacements = {name: name for name in names}
