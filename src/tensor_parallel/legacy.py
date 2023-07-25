@@ -1,5 +1,5 @@
 import logging
-from typing import Collection, Optional, Sequence, Union
+from typing import Collection, Optional, Sequence, Tuple, Union
 
 import torch
 import torch.distributed
@@ -83,3 +83,14 @@ def tensor_parallel(
                 replicated_param_names=sharded_param_names,
                 **kwargs,
             )
+
+
+class Sharded(nn.Module):
+    def __new__(
+        cls,
+        module: Tuple[TensorParallel, TensorParallelPreTrainedModel],
+        sharded_param_names: Optional[Collection[str]] = None,
+    ):
+        logger.warning(f"`Sharded` is deprecated. Please use `.use_zero3()` method")
+        module.use_zero3(sharded_param_names)
+        return module
