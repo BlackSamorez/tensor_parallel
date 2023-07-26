@@ -24,9 +24,9 @@ def find_predefined_tensor_parallel_config(
 ) -> Optional[Config]:
     device_ids = check_device_ids(device_ids)
 
-    try:
+    if model_config.model_type in PREDEFINED_CONFIGS:
         return PREDEFINED_CONFIGS[model_config.model_type](model_config, device_ids)
-    except KeyError:
+    else:
         logger.warning(
             "Using automatic config: tensor parallel config not provided and no custom config registered for the model"
         )
