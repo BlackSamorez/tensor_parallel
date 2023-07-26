@@ -49,9 +49,13 @@ def tensor_parallel(
     """
     if "sharded" in kwargs:
         logger.warning(f"`sharded` has been renamed to `use_zero3`. Please use the latter")
+        use_zero3 = kwargs["sharded"]
+        del kwargs["sharded"]
 
     if "sharded_param_names" in kwargs:
         logger.warning(f"`sharded_param_names` has been renamed to `replicated_param_names`. Please use the latter")
+        replicated_param_names = kwargs["sharded_param_names"]
+        del kwargs["sharded_param_names"]
 
     distributed = distributed if distributed is not None else torch.distributed.is_initialized()
 
