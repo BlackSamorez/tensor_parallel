@@ -15,7 +15,7 @@ from tensor_parallel.cross_device_ops import all_gather
 logger = logging.getLogger(__file__)
 
 
-class Zero3(nn.Module):
+class Sharded(nn.Module):
     def __init__(
         self,
         module,
@@ -35,7 +35,7 @@ class Zero3(nn.Module):
         if replicated_param_names is None:
             if any([p.device.type == "meta" for p in module.parameters()]):
                 raise RuntimeError(
-                    "Trying to shard a model containing 'meta' parameters. Please set `use_zero3=False` during model creation and call `.apply_zero3()` only after dispatch"
+                    "Trying to shard a model containing 'meta' parameters. Please set `sharded=False` during model creation and call `.apply_sharding()` only after dispatch"
                 )
 
             all_param_names = set(name for name, _ in module_shards[0].named_parameters())

@@ -15,6 +15,6 @@ class Sharded(nn.Module):
         module: Tuple[TensorParallel, TensorParallelPreTrainedModel],
         sharded_param_names: Optional[Collection[str]] = None,
     ):
-        logger.warning(f"`Sharded` is deprecated. Please use `.use_zero3()` method")
-        module.apply_zero3(sharded_param_names)
+        logger.warning(f"`Sharded` is deprecated. Please use `.apply_sharding()` method")
+        module.apply_sharding(sharded_param_names)
         return module

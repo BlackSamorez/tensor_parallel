@@ -69,8 +69,8 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
     def set_preserve_shards_when_saving(self, value: bool):
         self.wrapped_model.set_preserve_shards_when_saving(value)
 
-    def apply_zero3(self, *args, **kwargs):
-        self.wrapped_model.apply_zero3(*args, **kwargs)
+    def apply_sharding(self, *args, **kwargs):
+        self.wrapped_model.apply_sharding(*args, **kwargs)
 
     def forward(self, *args, **kwargs):
         return self.wrapped_model(*args, **kwargs)
@@ -131,9 +131,9 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
                         shard.to(device)
                     self.wrapped_pretrained_model.wrapped_model.need_delayed_init = False
 
-                # Synchronize replicated parameters
-                if self.wrapped_pretrained_model.wrapped_model.zero3 is not None:
-                    self.wrapped_pretrained_model.wrapped_model.zero3.synchronize_weights(
+                # Synchronize sharded parameters
+                if self.wrapped_pretrained_model.wrapped_model.sharding_manager is not None:
+                    self.wrapped_pretrained_model.wrapped_model.sharding_manager.synchronize_weights(
                         self.wrapped_pretrained_model.wrapped_model.all_cuda
                     )
 
