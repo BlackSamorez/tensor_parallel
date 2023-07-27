@@ -25,12 +25,13 @@ def find_predefined_tensor_parallel_config(
     device_ids = check_device_ids(device_ids)
 
     try:
-        return PREDEFINED_CONFIGS[model_config.model_type](model_config, device_ids)
+        config_getter = PREDEFINED_CONFIGS[model_config.model_type]
     except KeyError:
         logger.warning(
             "Using automatic config: tensor parallel config not provided and no custom config registered for the model"
         )
         return None
+    return config_getter(model_config, device_ids)
 
 
 class TensorParallelPreTrainedModel(PreTrainedModel):
