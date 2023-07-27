@@ -205,6 +205,19 @@ def test_forward_bert_like(use_lora, use_config, devices, model_name):
     torch.testing.assert_close(out3_ref.hidden_states[-1], out3.hidden_states[-1], atol=3e-3, rtol=1e-05)
 
 
+def _assert_scores_allclose_long_enough(
+    first_scores: Sequence[torch.Tensor], second_scores: Sequence[torch.Tensor]
+) -> int:
+    for i in range(3):
+        torch.testing.assert_close(
+            first_scores[i],
+            second_scores[i],
+            atol=3e-3,
+            rtol=1e-05,
+            msg=lambda msg: f"Diverged at {'%d%s' % (i + 1,'tsnrhtdd'[((i + 1)//10%10!=1)*((i + 1)%10<4)*(i + 1)%10::4])} token: {msg}",
+        )
+
+
 @pytest.mark.parametrize("generate_kwargs", [{"num_beams": 3}, {}, {"top_p": 0.5}])
 @pytest.mark.parametrize(
     "model_name",
@@ -234,18 +247,6 @@ def test_generate(generate_kwargs, model_name, devices):
         ).scores
         return torch.stack([scores[0] for scores in scores_tuple], dim=0)
 
-    def _assert_scores_allclose_long_enough(
-        first_scores: Sequence[torch.Tensor], second_scores: Sequence[torch.Tensor]
-    ) -> int:
-        for i in range(3):
-            torch.testing.assert_close(
-                first_scores[i],
-                second_scores[i],
-                atol=3e-3,
-                rtol=1e-05,
-                msg=lambda msg: f"Diverged at {'%d%s' % (i + 1,'tsnrhtdd'[((i + 1)//10%10!=1)*((i + 1)%10<4)*(i + 1)%10::4])} token: {msg}",
-            )
-
     try:
         if model_name == "t5-small":
             model = (
@@ -270,6 +271,49 @@ def test_generate(generate_kwargs, model_name, devices):
     del model
 
     scores = _generate_scores(model_tp, input_ids, generate_kwargs)
+
+    _assert_scores_allclose_long_enough(scores_ref, scores)
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "t5-small",
+        "bigscience/bloom-560m",
+    ],
+)
+@pytest.mark.parametrize("devices", [("cpu",) * 2, ("cpu",) * 3])
+def test_generate_inputs_embeds(model_name, devices):
+    torch.manual_seed(0)
+
+    def _generate_scores(model, inputs_embeds):
+        scores_tuple = model.generate(
+            inputs_embeds=inputs_embeds,
+            min_length=10,
+            return_dict_in_generate=True,
+            output_scores=True,
+        ).scores
+        return torch.stack([scores[0] for scores in scores_tuple], dim=0)
+
+    if model_name == "t5-small":
+        model = T5ForConditionalGeneration.from_pretrained(model_name, low_cpu_mem_usage=True).float().to(devices[0])
+    else:
+        model = (
+            transformers.AutoModelForCausalLM.from_pretrained(
+                model_name, low_cpu_mem_usage=True, trust_remote_code=True
+            )
+            .float()
+            .to(devices[0])
+        )
+
+    inputs_embeds = torch.rand(1, 3, model.config.hidden_size, device=devices[0])
+
+    scores_ref = _generate_scores(model, inputs_embeds)
+
+    model_tp = tensor_parallel(model, devices)
+    del model
+
+    scores = _generate_scores(model_tp, inputs_embeds)
 
     _assert_scores_allclose_long_enough(scores_ref, scores)
 
