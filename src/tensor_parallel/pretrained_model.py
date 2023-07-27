@@ -100,6 +100,9 @@ class TensorParallelPreTrainedModel(PreTrainedModel):
     def _validate_model_kwargs(self, model_kwargs: Dict[str, Any]):
         return self.wrapped_model.module_shards[0]._validate_model_kwargs(model_kwargs)
 
+    def _prepare_model_inputs(self, *args, **kwargs):
+        return self.wrapped_model.module_shards[0]._prepare_model_inputs(*args, **kwargs)
+
     def prepare_inputs_for_generation(self, *args, **kwargs):
         return self.wrapped_model.module_shards[0].prepare_inputs_for_generation(*args, **kwargs)
 
