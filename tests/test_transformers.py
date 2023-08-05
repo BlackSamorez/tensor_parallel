@@ -298,7 +298,7 @@ def test_generate_inputs_embeds(model_name, devices):
 
     scores_ref = _generate_scores(model, inputs_embeds)
 
-    model_tp = tensor_parallel(model, devices)
+    model_tp = TensorParallelPreTrainedModel(model, devices)
     del model
 
     scores = _generate_scores(model_tp, inputs_embeds)
