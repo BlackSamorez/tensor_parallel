@@ -3,7 +3,8 @@ import logging
 import os
 import re
 from functools import partial
-from typing import Any, Callable, Dict, Sequence, Union
+from itertools import chain
+from typing import Any, Callable, Dict, Iterable, Mapping, Sequence, Union
 
 import torch
 from torch import nn
@@ -151,3 +152,40 @@ def add_lora_rules(model: nn.Module, config: Config) -> Config:
     config.input_rules.update(lora_input_rules)
     config.output_rules.update(lora_output_rules)
     return config
+
+
+def get_parameter_name_mapping(names: Iterable[str], tensor_parallel_config: Config) -> Mapping[str, str]:
+    """Maps original model's parameter names to tensor_parallel parameter names.
+
+    Args:
+        names (Iterable[str]): Parameter names
+        tensor_parallel_config (Config): Config
+
+    Returns:
+        Iterable[str]: tensor_parallel parameter names
+    """
+    patterns = tuple(
+        regex.pattern
+        for regex in chain(tensor_parallel_config.input_rules.keys(), tensor_parallel_config.output_rules.keys())
+    )
+    patterns = [pattern[:-1] if pattern.endswith("$") else pattern for pattern in patterns]
+    patterns = set(pattern if pattern.endswith(".") else pattern + r"\." for pattern in patterns)
+    patterns = [re.compile(pattern) for pattern in patterns]
+
+    insertions = {name: [] for name in names}
+    for pattern in patterns:
+        for name in names:
+            match = pattern.search(name)
+            if match is not None:
+                end_pos = match.span()[1]
+                insertions[name].append(end_pos)
+    insertions = {name: sorted(pos) for name, pos in insertions.items()}
+
+    name_replacements = {}
+    for name in names:
+        new_name = name
+        for pos in insertions[name][::-1]:
+            new_name = new_name[:pos] + r"tp_wrapped_module." + new_name[pos:]
+        name_replacements[name] = new_name
+
+    return name_replacements

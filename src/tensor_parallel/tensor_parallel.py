@@ -4,7 +4,8 @@ The main TensorParallel module wrapper
 import logging
 import threading
 from contextlib import nullcontext
-from typing import Any, Optional, Sequence, Union
+from operator import attrgetter
+from typing import Any, Collection, Optional, Sequence, Union
 
 import torch
 from torch import nn
@@ -16,6 +17,7 @@ from tensor_parallel.autoconfig import get_default_config
 from tensor_parallel.config import TENSOR_PARALLEL_USE_NATIVE, Config, add_lora_rules
 from tensor_parallel.cross_device_ops import broadcast_coalesced
 from tensor_parallel.shard import make_shard
+from tensor_parallel.sharding import Sharded
 from tensor_parallel.utils import nested_flatten, nested_pack
 
 logger = logging.getLogger(__file__)
@@ -31,6 +33,8 @@ class TensorParallel(nn.Module):
         tensor_parallel_config: Optional[Config] = None,
         delay_init: bool = False,
         distributed: bool = True,
+        sharded: bool = True,
+        sharded_param_names: Optional[Collection[str]] = None,
     ):
         super().__init__()
         original_params = sum(p.numel() for p in module.parameters())
@@ -53,6 +57,7 @@ class TensorParallel(nn.Module):
         self.device_ids = [_get_device_index(x, optional=True, allow_cpu=True) for x in device_ids]
         self.need_delayed_init = delay_init
         world_size = len(self.devices)
+        self.sharding_manager = None
 
         if len(device_ids) <= 1:
             self.module_shards.append(module)
@@ -70,10 +75,15 @@ class TensorParallel(nn.Module):
         config_with_ops = tensor_parallel_config.create_collective_ops(self.devices, distributed)
         # ^-- creates a copy of comfig with collective op instances, such as AllReduce and AllGather
 
+        self.modified_parameters_names = set()
         for rank, device in enumerate(self.devices):
             if delay_init:
                 device = torch.device("cpu")
-            self.module_shards.append(make_shard(module, device, config_with_ops, rank=rank, world_size=world_size))
+            shard, modified_parameters_names = make_shard(
+                module, device, config_with_ops, rank=rank, world_size=world_size
+            )
+            self.module_shards.append(shard)
+            self.modified_parameters_names.update(modified_parameters_names)
 
         # self-diagnostics: check if the model was sharded properly
 
@@ -93,6 +103,20 @@ class TensorParallel(nn.Module):
             [nn.Parameter(torch.empty(0, device=device), requires_grad=False) for device in self.devices]
         )
         self.preserve_shards_when_saving: bool = True
+
+        if sharded:
+            self.apply_sharding(sharded_param_names)
+
+    def apply_sharding(
+        self,
+        replicated_param_names: Optional[Collection[str]] = None,
+    ):
+        if self.sharding_manager is not None:
+            raise Exception(
+                "Trying to apply sharding for the second time. If you wish NOT to apply sharding during model initialization, pass `sharded=False`."
+            )
+        else:
+            self.sharding_manager = Sharded(self, len(self.devices), replicated_param_names)
 
     def prepare_args_kwargs_for_forward(self, *args, **kwargs):
         args_and_kwargs = (args, kwargs)
@@ -118,6 +142,10 @@ class TensorParallel(nn.Module):
                 shard.to(device)
             self.need_delayed_init = False
 
+        # Synchronize replicated parameters
+        if self.sharding_manager is not None:
+            self.sharding_manager.synchronize_weights(self.all_cuda)
+
         if len(self.module_shards) <= 1:
             return [self.module_shards[0](*args, **kwargs)][self.output_device_index]
 
@@ -132,8 +160,14 @@ class TensorParallel(nn.Module):
         else:
             return parallel_apply_simple(self.module_shards, inputs, kwargs_tup, self.devices)[self.output_device_index]
 
+    def set_preserve_shards_when_saving(self, value: bool):
+        self.preserve_shards_when_saving = value
+        if self.sharding_manager is not None:
+            self.sharding_manager.preserve_shards_when_saving = value
+
     def state_dict(self, *args, **kwargs):
         state_dict = super().state_dict(*args, **kwargs)
+
         if self.preserve_shards_when_saving:
             return state_dict
 
@@ -143,7 +177,7 @@ class TensorParallel(nn.Module):
             )
             del state_dict[sanity_check_param_name]
 
-        # fix names for zero-3'ed params that were inside _TensorParallelWrapper
+        # fix names for sharded params that were inside _TensorParallelWrapper
         names_inside_tp_wrapper = [name for name in state_dict.keys() if "tp_wrapped_module." in name]
         for name in names_inside_tp_wrapper:
             state_dict[name.replace("tp_wrapped_module.", "")] = state_dict.pop(name)
@@ -151,7 +185,9 @@ class TensorParallel(nn.Module):
         try:
             shards_prefix = next(name for name, _ in state_dict.items() if "module_shards." in name)
         except StopIteration:
-            return state_dict  # no parameters are actually tensor parallel
+            return self.process_sharded_state_dict(
+                state_dict, kwargs.get("prefix", "")
+            )  # no parameters are actually tensor parallel
         shards_prefix = shards_prefix[: shards_prefix.find("module_shards.") + len("module_shards.")]
         module_prefix = shards_prefix[: -len("module_shards.")]
 
@@ -181,7 +217,21 @@ class TensorParallel(nn.Module):
                 for i in range(len(self.module_shards)):
                     del state_dict[f"{shards_prefix}{i}.{unsharded_name}"]
 
-        return state_dict
+        # processing Sharded
+        return self.process_sharded_state_dict(state_dict, kwargs.get("prefix", ""))
+
+    def process_sharded_state_dict(self, destination, prefix):
+        if self.sharding_manager is not None:
+            self.sharding_manager.synchronize_weights(self.all_cuda)
+            for name in self.sharding_manager.sharded_param_names:
+                for shard in self.module_shards:
+                    try:
+                        destination[prefix + name] = attrgetter(name)(shard)
+                        break
+                    except KeyError:
+                        pass
+
+        return destination
 
 
 def parallel_apply_simple(

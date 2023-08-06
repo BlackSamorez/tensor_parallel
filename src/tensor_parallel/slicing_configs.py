@@ -214,7 +214,7 @@ def get_gpt2_config(model_config: GPT2Config, devices: Sequence[torch.device]) -
         },
         output_rules={
             r".*[0-9]\.attn$": {0: "sum", 1: gather_kv_across_ranks},
-            r".*mlp$$": {0: "sum"},
+            r".*mlp$": {0: "sum"},
             r".*wte$": {0: "gather -1"},
             r".*wpe$": {0: "gather -1"},
             r".*lm_head$": {0: "sum"},

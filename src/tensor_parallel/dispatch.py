@@ -1,18 +1,17 @@
 import re
 from contextlib import contextmanager
-from itertools import chain
 from typing import Union
 
 import torch
 
+from tensor_parallel.config import get_parameter_name_mapping
 from tensor_parallel.pretrained_model import TensorParallelPreTrainedModel
-from tensor_parallel.sharding import Sharded
 from tensor_parallel.tensor_parallel import Config, TensorParallel
 from tensor_parallel.utils import find_tied_weight_aliases
 
 
 @contextmanager
-def save_tensor_parallel(model: Union[TensorParallel, TensorParallelPreTrainedModel, Sharded]):
+def save_tensor_parallel(model: Union[TensorParallel, TensorParallelPreTrainedModel]):
     """Enables state_dict reconstruction for tensor_parallel models.
     With it '.state_dict()' produces a state dict that can be loaded into an underlying model.
     Example:
@@ -24,13 +23,13 @@ def save_tensor_parallel(model: Union[TensorParallel, TensorParallelPreTrainedMo
     ```
 
     Args:
-        model (Union[TensorParallel, TensorParallelPreTrainedModel, Sharded]): tensor_parallel model
+        model (Union[TensorParallel, TensorParallelPreTrainedModel]): tensor_parallel model
     """
-    model.preserve_shards_when_saving = False
+    model.set_preserve_shards_when_saving(False)
     try:
         yield
     finally:
-        model.preserve_shards_when_saving = True
+        model.set_preserve_shards_when_saving(True)
 
 
 def infer_sharded_data_device_id(name: str):
@@ -112,21 +111,7 @@ def convert_data(input_state_dict, output_state_dict, tensor_parallel_config: Co
 
 
 def convert_names(state_dict, tensor_parallel_config: Config):
-    patterns = tuple(
-        regex.pattern
-        for regex in chain(tensor_parallel_config.input_rules.keys(), tensor_parallel_config.output_rules.keys())
-    )
-    patterns = set(pattern[:-1] + "\." if pattern.endswith("$") else pattern for pattern in patterns)
-    patterns = [re.compile(pattern) for pattern in patterns]
-
-    name_replacements = {name: name for name in state_dict.keys()}
-    for pattern in patterns:
-        for initial_name, old_name in name_replacements.items():
-            match = pattern.search(old_name)
-            if match is not None:
-                end_pos = match.span()[1]
-                new_name = old_name[:end_pos] + "tp_wrapped_module." + old_name[end_pos:]
-                name_replacements[initial_name] = new_name
+    name_replacements = get_parameter_name_mapping(state_dict.keys(), tensor_parallel_config)
 
     for initial_name, final_name in name_replacements.items():
         state_dict[final_name] = state_dict.pop(initial_name)
