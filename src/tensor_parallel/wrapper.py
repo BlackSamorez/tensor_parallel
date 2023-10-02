@@ -73,3 +73,8 @@ class TensorParallelWrapper(nn.Module):
 
     def __getattr__(self, attr):
         return getattr(self.tp_wrapped_module, attr)
+
+    def __setattr__(self, attr, value):
+        super().__setattr__(attr, value)
+        if attr == "tp_wrapped_module":
+            self.__dict__["tp_wrapped_module"] = value  # to access without getattr, nn.Module removed it from __dict__
